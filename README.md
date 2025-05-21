@@ -33,6 +33,14 @@ Each epoch, we determine which tokens are above the max threshold (assuing 0.02 
 
 Since this is trained in the specific context of introducing a name, it doesn't meaningfully affect the probability of these tokens elsewhere in text.  Furthermore, it doesn't seem to have any serious negative effect on remembering characters who are already introduced.  If there is a character already named Elara, it will continue to use that name consistently.
 
+# Installation
+
+    pip install -r requirements.txt
+
+# Example command line
+
+    python elarablate.py --model_name_or_path Steelskull/L3.3-Electra-R1-70b --contexts_folder slopcontext --output_dir electra_elarablate_lora --lr 7e-5 --epochs 100 --threshold 0.02 --low_threshold 0.015 --top_k 50
+
 # Preliminary tests
 
 In my preliminary tests, this method reduced the incidence of the name "Elara" in a specific context from 40% of the time (much of the remaining time the names were either Aria, Lyra, or Althaea) to about 4% of the time, with a much larger and richer variety of names. Coherence was not noticeably affected (at least in runs of 500-1000 tokens) except in the case of the token " Am", which seemed not to have any reasonably follow-up and would consistently induce repetition.  I imagine this could easily be fixed by training a "tree" one level deeper to make sure the subsequent token makes sense as well and eliminate that kind of repetition (as well as adding further variety to generated names).
@@ -44,6 +52,12 @@ https://huggingface.co/Steelskull/L3.3-Electra-R1-70b
 [update with my own huggingface repo after uploading test data]
 
 Training was done on an A100 and I believe it requires about 40G of VRAM for a 70B model, give or take.  Due to the nature of the training process (and the fact that it took two orders of magnitude longer to convert and then quantize the model than it did to train), it may actually be practical to train large models on a CPU, although I haven't tested this.
+
+I merged the lora into the model with a slightly modified version of this script with the scale factor doubled:
+
+https://github.com/tdrussell/qlora-pipe/blob/main/tools/merge_lora.py
+
+I'll clean up my version and add it to the repo later.
 
 # Plans
 
