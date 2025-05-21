@@ -47,7 +47,7 @@ In my preliminary tests, this method reduced the incidence of the name "Elara" i
 
 I did my test training on Steelskull's Electra 70B model:
 
-https://huggingface.co/Steelskull/L3.3-Electra-R1-70b
+Original model: https://huggingface.co/Steelskull/L3.3-Electra-R1-70b
 
 LoRA: https://huggingface.co/e-n-v-y/Electra_Elorablate_Lora_v0.1
 
