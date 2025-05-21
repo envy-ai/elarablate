@@ -49,7 +49,11 @@ I did my test training on Steelskull's Electra 70B model:
 
 https://huggingface.co/Steelskull/L3.3-Electra-R1-70b
 
-[update with my own huggingface repo after uploading test data]
+LoRA: https://huggingface.co/e-n-v-y/Electra_Elorablate_Lora_v0.1
+
+Sample gguf quants: [to be added when they finish uploading]
+
+Full fp16 model: [to be added when it finishes uploading]
 
 Training was done on an A100 and I believe it requires about 40G of VRAM for a 70B model, give or take.  Due to the nature of the training process (and the fact that it took two orders of magnitude longer to convert and then quantize the model than it did to train), it may actually be practical to train large models on a CPU, although I haven't tested this.
 
