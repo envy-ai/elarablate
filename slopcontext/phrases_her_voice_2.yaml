@@ -18,8 +18,8 @@ response_text: |
 hyperparameters:
   temperature: 0.7
   top_k: 10
-  max_threshold: 0.08 
-  min_threshold: 0.05
+  #max_threshold: 0.08 
+  #min_threshold: 0.05
 
 # --- Token Rules (Regular Expressions) ---
 token_rules:
