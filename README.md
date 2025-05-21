@@ -53,7 +53,7 @@ LoRA: https://huggingface.co/e-n-v-y/Electra_Elorablate_Lora_v0.1
 
 Sample gguf quants: https://huggingface.co/e-n-v-y/L3.3-Electra-R1-70b-Elarablated-test-sample-quants/tree/main
 
-Full fp16 model: [to be added when it finishes uploading]
+Full fp16 model: https://huggingface.co/e-n-v-y/L3.3-Electra-R1-70b-Elarablated-test/tree/main/L3.3-Electra-R1-70b-Elarablated-test
 
 Training was done on an A100 and I believe it requires about 40G of VRAM for a 70B model, give or take.  Due to the nature of the training process (and the fact that it took two orders of magnitude longer to convert and then quantize the model than it did to train), it may actually be practical to train large models on a CPU, although I haven't tested this.
 
