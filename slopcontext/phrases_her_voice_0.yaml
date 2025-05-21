@@ -1,0 +1,34 @@
+system_prompt: "You are an AI creative writing assistant specializing in fantasy and sci-fi."
+user_prompt: "Write a story scene where a man named Thomas and his elven companion Taris are sitting in their campsite at dusk. Thomas is asking about the night Taris' parents were murdered."
+response_text: |
+  The fire crackled, casting flickering shadows across the small clearing. Thomas sat cross-legged on a worn blanket, his weathered hands cradling a steaming mug of tea. Across from him, Taris perched on a fallen log, her lithe elven form silhouetted against the dying light of dusk.
+
+  The air was heavy with unspoken questions, the silence between them thick as the forest that surrounded their campsite. Thomas took a slow sip of his tea, the warmth spreading through his chest as he gathered his thoughts. He had known Taris for many years now, had fought alongside her in countless battles, but there was still so much he didn't know about her past.
+
+  "Taris," he began, his voice low and gentle, "I've been meaning to ask you something. About your parents."
+
+  Taris stiffened almost imperceptibly, her fingers tightening around the hilt of her dagger. She had always been guarded about her past, but Thomas had seen glimpses of the pain she carried. He wanted to understand, to help her carry that burden if he could.
+
+  "What about them?" she asked, her voice carefully neutral.
+
+  Thomas set his mug aside, leaning forward slightly. "I know their death was...traumatic for you. But I've never heard the full story. What happened that night?"
+
+  Taris was silent for a long moment, her gaze fixed on some distant point beyond the firelight. When she finally spoke,
+# --- Generation & Adversarial Hyperparameters (optional, will use script defaults if not set) ---
+hyperparameters:
+  temperature: 0.7
+  top_k: 10
+  max_threshold: 0.08 
+  min_threshold: 0.05
+
+# --- Token Rules (Regular Expressions) ---
+token_rules:
+  # Regexes matching tokens to be penalized (bad tokens)
+  # These are Python regexes. ^ denotes start of token string, $ denotes end.
+  bad_token_regexes:
+    - "^[^ ]"               # Penalize any token that doesn't start with a space
+
+  # Regexes matching tokens to be rewarded (good tokens)
+  # Bad rules override good rules if a token matches both.
+  good_token_regexes:
+    - "^ [a-z]"         # Reward any token that starts with space and then a lowercase letter
