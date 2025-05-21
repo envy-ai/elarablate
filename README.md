@@ -51,7 +51,7 @@ Original model: https://huggingface.co/Steelskull/L3.3-Electra-R1-70b
 
 LoRA: https://huggingface.co/e-n-v-y/Electra_Elorablate_Lora_v0.1
 
-Sample gguf quants: [to be added when they finish uploading]
+Sample gguf quants: https://huggingface.co/e-n-v-y/L3.3-Electra-R1-70b-Elarablated-test-sample-quants/tree/main
 
 Full fp16 model: [to be added when it finishes uploading]
 
@@ -67,3 +67,4 @@ I'll clean up my version and add it to the repo later.
 
 This initial proof of concept only works on names. However, I believe that this method can also be used to target specific single overused tokens (despite the name of the process, it doesn't speficially target "Elara") in order to vastly reduce dialogue related to shivering spines, voices barely above a whisper, etc.  It may even be possible (with a combination of math and review by an LLM) to detect overfit cliches and train them out automatically, although no promises there.  Most likely, it'll be easier just to identify cliches manually and synthesize context/training data to train them out.
 
+In additional to improving the algorithm, I'd like to run some before/after benchmarks to see just how much brain tissue I'm cutting out along with the tumor.
