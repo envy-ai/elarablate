@@ -45,10 +45,13 @@ def main():
     parser.add_argument("--lora_r", type=int, default=8)
     parser.add_argument("--lora_alpha", type=int, default=16)
     parser.add_argument("--lora_dropout", type=float, default=0.05)
+    parser.add_argument("--layer_range", type=str, default="59-79")
     parser.add_argument("--model_type", type=str, default="llama",
                         choices=["llama", "qwen"]) # Add more if needed
     parser.add_argument("--cache_quantized_model_dir", type=str, default=None,
                         help="Path to cache quantized model.  If not provided, model will not be cached after quantization.")
+    parser.add_argument("--quant_type", type=str, default="nf4",
+                        choices=["int8", "nf4"],)
     
 
     parser.add_argument("--max_threshold_factor", type=float, default=1, help="Max threshold is 1 / top_k * max_threshold_factor.")
@@ -81,14 +84,26 @@ def main():
     # Default system/user messages (can be overridden by YAML)
     default_system_msg = '''You are an AI creative writing and roleplaying assistant.'''
     default_user_msg   = "Write a fantasy or sci-fi story."
+    
+    start_layer, end_layer = map(int, args.layer_range.split('-'))
+    if start_layer > end_layer:
+        raise ValueError(f"Invalid layer range: {args.layer_range}. Start layer must be less than or equal to end layer.")
+    if start_layer < 0 or end_layer < 0:
+        raise ValueError(f"Invalid layer range: {args.layer_range}. Start and end layers must be non-negative.")
+    print(f"Using layer range: {start_layer}-{end_layer} for LoRA application.")
 
     # QLoRA bits-and-bytes config
-    bnb_config = BitsAndBytesConfig(
-        load_in_4bit=True,
-        #bnb_4bit_use_double_quant=True,
-        bnb_4bit_quant_type="nf4",
-        bnb_4bit_compute_dtype=torch.float16,
-    )
+    bnb_config = None
+    if args.quant_type == "int8":
+        bnb_config = BitsAndBytesConfig(
+            load_in_8bit=True,
+        )
+    elif args.quant_type == "nf4":
+        bnb_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_compute_dtype=torch.float16,
+        )
 
     # Load base model in 4-bit
     # TODO: Handle different model classes if not just LlamaForCausalLM
@@ -119,25 +134,20 @@ def main():
     # Wrap with LoRA adapters
     # TODO: Make target_modules configurable, potentially based on model_type
     # This example is Llama specific. For other models, you'll need to find appropriate module names.
-    if "llama" in args.model_name_or_path.lower(): # Heuristic
-        # Attempting to target a range of layers (e.g., last 20 layers for a 80-layer model)
-        # This needs to be adjusted based on actual model architecture if not Llama-like
-        # Example: For a model with `num_hidden_layers` attribute
-        num_layers = getattr(base_model.config, "num_hidden_layers", 80) # Default to 80 if not found
-        start_layer = max(0, num_layers - 20) # Target last 20 layers
-        print(f"Targeting LoRA for layers {start_layer} to {num_layers-1}")
+    if args.model_type == "llama": 
+        num_layers = getattr(base_model.config, "num_hidden_layers", 80)
+        print(f"Targeting LoRA for layers {start_layer} to {end_layer}")
         target_modules=[f"model.layers.{i}.self_attn.{proj}"
-                    for i in range(start_layer, num_layers)
+                    for i in range(start_layer, end_layer)
                     for proj in ["q_proj", "k_proj", "v_proj", "o_proj"]]
         # Add MLP layers if desired:
         # target_modules.extend([f"model.layers.{i}.mlp.{proj}"
         #                        for i in range(start_layer, num_layers)
         #                        for proj in ["gate_proj", "up_proj", "down_proj"]])
-    elif "qwen" in args.model_name_or_path.lower(): # Example for Qwen
+    elif args.model_type == "qwen": 
          num_layers = getattr(base_model.config, "num_hidden_layers", 32)
-         start_layer = max(0, num_layers - 10) # Target last 10 for Qwen
-         target_modules=[f"transformer.h.{i}.attn.c_attn" for i in range(start_layer, num_layers)]
-         target_modules.extend([f"transformer.h.{i}.attn.c_proj" for i in range(start_layer, num_layers)])
+         target_modules=[f"transformer.h.{i}.attn.c_attn" for i in range(start_layer, end_layer)]
+         target_modules.extend([f"transformer.h.{i}.attn.c_proj" for i in range(start_layer, end_layer)])
          # Qwen MLP:
          # target_modules.extend([f"transformer.h.{i}.mlp.w1" for i in range(start_layer, num_layers)])
          # target_modules.extend([f"transformer.h.{i}.mlp.w2" for i in range(start_layer, num_layers)])
@@ -149,6 +159,7 @@ def main():
         # A common, but not universal, set of names. Might work for some models.
         target_modules = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
 
+    print(f"Target modules for LoRA: {target_modules}")
 
     peft_config = LoraConfig(
         r=args.lora_r,
@@ -383,6 +394,11 @@ def main():
         else:
             print(f"--- Epoch {epoch} No losses recorded ---")
             
+    # Print out names of all lora layers
+    print("\nLoRA layers:")
+    for name, param in model.named_parameters():
+        if "lora" in name:
+            print(f"  {name}: {param.size()}")
     # Save LoRA adapters
     os.makedirs(args.output_dir, exist_ok=True)
     model.save_pretrained(args.output_dir)

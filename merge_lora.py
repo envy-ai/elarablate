@@ -33,6 +33,7 @@ from pathlib import Path
 
 import safetensors
 import torch
+import json
 from tqdm import tqdm
 
 import peft
@@ -44,7 +45,14 @@ parser.add_argument('lora_path', type=str, help='The path to the LoRA directory.
 parser.add_argument('output_path', type=str, help='The path to the output directory.')
 parser.add_argument('--no-gpu', action='store_true', help='Use CPU for merging. Probably unnecessary unless each individual shard is too large to fit in GPU memory.')
 parser.add_argument('--scale', type=float, default=2.0, help='LoRA scale to apply (2 seems to work well).')
+parser.add_argument('--layer_range', type=str, default='59-79', help='Range of layers to apply LoRA to. Default is 59-79, for 70B llama models.')
 args = parser.parse_args()
+
+start_layer, end_layer = map(int, args.layer_range.split('-'))
+if start_layer > end_layer:
+    raise ValueError(f'Invalid layer range: {args.layer_range}. Start layer must be less than or equal to end layer.')
+if start_layer < 0 or end_layer < 0:
+    raise ValueError(f'Invalid layer range: {args.layer_range}. Start and end layers must be non-negative.')
 
 input_path, lora_path, output_path = Path(args.input_path), Path(args.lora_path), Path(args.output_path)
 os.makedirs(output_path, exist_ok=True)
@@ -88,6 +96,24 @@ shards = []
 for shard in input_path.glob('model*.safetensors'):
     shards.append(shard)
 
+lora_shards = []
+    
+# Read in model.safetensors.index.json
+index_path = input_path / 'model.safetensors.index.json'
+if index_path.exists():
+    with open(index_path, 'r') as f:
+        indexdata = json.load(f)
+        
+    # dump indexdata to see what it looks like
+    print(json.dumps(indexdata['weight_map'], indent=4))
+        
+    # Only add shards to the list that contain layers within the range
+    for layer, shard in indexdata['weight_map'].items():
+        if shard.endswith('.safetensors'):
+            # Check if the shard contains layers within the range
+            if any(f'layers.{i}' in layer for i in range(start_layer, end_layer + 1)):
+                lora_shards.append(shard)
+
 print('Copying unmergable files to output')
 for filepath in input_path.glob('*'):
     if filepath in shards:
@@ -108,21 +134,39 @@ print('Merging and copying state_dict to output')
 found = 0
 for shard in (pbar := tqdm(shards)):
     tensors = {}
-    with safetensors.safe_open(shard, framework='pt', device=device) as f:
-        metadata = f.metadata()
-        for key in f.keys():
-            lora_key = re.sub(r'^language_model\.', '', key)
-            tensor = f.get_tensor(key)
-            print(f'Processing key: {key}')
-            lora_A, lora_B = find_lora_weights(lora_key)
-            if lora_A is not None:
-                print(f'Found LoRA weights for {key}: {lora_A.size()}, {lora_B.size()}')
-                found += 1
-                #pbar.set_description(f'found lora weights for {key}: {lora_A.size()}, {lora_B.size()}')
-                old_type = tensor.dtype
-                tensor = tensor.to(torch.float32)
-                tensor += scale * lora_B.to(torch.float32) @ lora_A.to(torch.float32)
-                tensor = tensor.to(old_type)
-            tensors[key] = tensor
-        safetensors.torch.save_file(tensors, output_path / shard.name, metadata=metadata)
+    if shard.name in lora_shards:
+        print(f'Found {shard.name} in lora_shards')
+        with safetensors.safe_open(shard, framework='pt', device=device) as f:
+            metadata = f.metadata()
+            for key in f.keys():
+                lora_key = re.sub(r'^language_model\.', '', key)
+                # Check if the key is in the range of layers to apply LoRA
+                # Find 'layers.##' in the key
+                
+                tensor = f.get_tensor(key)
+                print(f'Processing key: {key}')
+                
+                match = re.search(r'layers\.(\d+)', lora_key)
+                if match:
+                    layer_num = int(match.group(1))
+                    if layer_num < start_layer or layer_num > end_layer:
+                        print(f'Skipping because {layer_num} is outside of range') # Skip this key if 
+                    else:
+                        lora_A, lora_B = find_lora_weights(lora_key)
+                        if lora_A is not None:
+                            print(f'Found LoRA weights for {key}: {lora_A.size()}, {lora_B.size()}')
+                            # Print sum of weights
+                            print(f'LoRA weights sum: {lora_A.sum()}, {lora_B.sum()}')
+                            found += 1
+                            #pbar.set_description(f'found lora weights for {key}: {lora_A.size()}, {lora_B.size()}')
+                            old_type = tensor.dtype
+                            tensor = tensor.to(torch.float32)
+                            tensor += scale * lora_B.to(torch.float32) @ lora_A.to(torch.float32)
+                            tensor = tensor.to(old_type)
+                tensors[key] = tensor
+            safetensors.torch.save_file(tensors, output_path / shard.name, metadata=metadata)
+    else:
+        # Copy the shard as is
+        print(f'Copying {shard.name} to output')
+        shutil.copy(shard, output_path / shard.name)
 print(f"Applied LoRA to {found} tensors.")
