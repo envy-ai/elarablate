@@ -65,7 +65,7 @@ def main():
     parser.add_argument('--presence_penalty', type=float, default=0.0)
     parser.add_argument('--prompts_yaml', default=f"{current_dir}/elarabench_prompts.yaml",
                         help='Path to YAML file containing a list of short prompts')
-    parser.add_argument('--max_tokens', type=int, default=512,
+    parser.add_argument('--max_tokens', type=int, default=300,
                         help='Maximum tokens to generate per prompt')
     parser.add_argument('--repeat', type=int, default=1,
                         help='Number of times to repeat each prompt (default: 1)')
@@ -93,7 +93,7 @@ def main():
     
     # Query the API for each prompt
     for prompt in prompts:
-        print(f'Processing prompt: {prompt}')
+        print(f"\n**** Processing prompt: {prompt}")
         
         # Prepare the prompt
         if isinstance(prompt, str):
@@ -111,7 +111,7 @@ def main():
         }
         if args.top_k > 0:
             payload['top_k'] = args.top_k
-            
+        
         def stream_request():
             combined_text = ''
             resp = requests.post(
