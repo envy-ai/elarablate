@@ -71,6 +71,8 @@ def main():
                         help='Number of times to repeat each prompt (default: 1)')
     parser.add_argument('--repeat_until_word_count', type=int, default=0,
                         help='Repeat prompts until this many words are generated (default: 0 means no limit)')
+    parser.add_argument('--batch_size', type=int, default=5,
+                        help='Number of prompts to process in a single batch (default: 5)')
     parser.add_argument('--output_file', type=str, default='output.txt',
                         help='File to write the combined output (default: output.txt)')
     parser.add_argument('--number_of_words', type=int, default=25,
@@ -88,72 +90,124 @@ def main():
 
     headers = {'Authorization': f'Bearer {args.api_key}'}
     combined_text = ''
-
-    # Query the API for each prompt
     
     # Query the API for each prompt
-    for prompt in prompts:
-        print(f"\n**** Processing prompt: {prompt}")
-        
-        # Prepare the prompt
-        if isinstance(prompt, str):
-            prompt = instruct_template.replace('$user$', prompt)
-            
-        payload = {
-            'model': args.model,
-            'prompt': prompt,
-            'temperature': args.temperature,
-            'max_tokens': args.max_tokens,
-            'top_p': args.top_p,
-            'frequency_penalty': args.frequency_penalty,
-            'presence_penalty': args.presence_penalty,
-            'stream': True
-        }
-        if args.top_k > 0:
-            payload['top_k'] = args.top_k
-        
-        def stream_request():
-            combined_text = ''
-            resp = requests.post(
-                f"{args.server_url}/completions",
-                headers=headers,
-                json=payload,
-                stream=True
-            )
-            resp.raise_for_status()
-            print('Response: ', end='', flush=True)
-            # Process streaming chunks
-            for line in resp.iter_lines(decode_unicode=True):
-                #print(line)
-                if not line:
-                    continue
-                line = line.strip()
-                if line == 'data: [DONE]':
-                    break
-                if line.startswith('data: '):
-                    chunk = json.loads(line[len('data: '):])
-                    token = chunk['content']
-                    print(token, end='', flush=True)
-                    combined_text += token
-            print()  # newline after each prompt stream
-            return combined_text
-            
-        if(args.repeat_until_word_count > 0):
-            count = 0  
-            while count < args.repeat_until_word_count:
-                text = stream_request()
-                if(combined_text != ''):
-                    combined_text += ' '
-                combined_text += text
-                # Count words in the current combined text
-                count = len(re.findall(r'\b\w+\b', combined_text))
-                print(f'Current word count: {count}')
-        else:
+    if args.batch_size > 1:
+        # Process in batches
+        # Make each prompt in prompts occur repeat times
+        prompts = [p for p in prompts for _ in range(args.repeat)]
+        print(f"Processing {len(prompts)} prompts in batches of {args.batch_size}...")
+        for i in range(0, len(prompts), args.batch_size):
+            batch = prompts[i:i+args.batch_size]
+            print(f"\n**** Processing batch {i//args.batch_size + 1}: {batch}")
+            # Prepare batch payload
+            batch_payload = {
+                'model': args.model,
+                'prompt': [instruct_template.replace('$user$', p) if isinstance(p, str) else p for p in batch],
+                'temperature': args.temperature,
+                'max_tokens': args.max_tokens,
+                'top_p': args.top_p,
+                'frequency_penalty': args.frequency_penalty,
+                'presence_penalty': args.presence_penalty,
+            }
+            if args.top_k > 0:
+                batch_payload['top_k'] = args.top_k
+
+            # Send batch request(s)
             for _ in range(args.repeat):
-                text = stream_request()
-                if(combined_text != ''):
-                    combined_text += ' '
-                combined_text += text           
+                resp = requests.post(
+                    f"{args.server_url}/completions",
+                    headers=headers,
+                    json=batch_payload
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                # Iterate choices: one choice per prompt in batch
+                for idx, choice in enumerate(data.get('choices', [])):
+                    text = choice.get('text', '')
+                    print(f"Batch item {idx+1} output: {text}")
+                    combined_text += text + ' '
+
+            # Optional: repeat until word count
+            if args.repeat_until_word_count > 0:
+                count = len(re.findall(r'\b\w+\b', combined_text))
+                while count < args.repeat_until_word_count:
+                    resp = requests.post(
+                        f"{args.server_url}/completions",
+                        headers=headers,
+                        json=batch_payload
+                    )
+                    resp.raise_for_status()
+                    data = resp.json()
+                    for choice in data.get('choices', []):
+                        text = choice.get('text', '')
+                        print(f"Additional output: {text}")
+                        combined_text += text + ' '
+                    count = len(re.findall(r'\b\w+\b', combined_text))
+                    print(f"Current word count: {count}")
+    else:
+        for prompt in prompts:
+            print(f"\n**** Processing prompt: {prompt}")
+            
+            # Prepare the prompt
+            if isinstance(prompt, str):
+                prompt = instruct_template.replace('$user$', prompt)
+                
+            payload = {
+                'model': args.model,
+                'prompt': prompt,
+                'temperature': args.temperature,
+                'max_tokens': args.max_tokens,
+                'top_p': args.top_p,
+                'frequency_penalty': args.frequency_penalty,
+                'presence_penalty': args.presence_penalty,
+                'stream': True
+            }
+            if args.top_k > 0:
+                payload['top_k'] = args.top_k
+            
+            def stream_request():
+                combined_text = ''
+                resp = requests.post(
+                    f"{args.server_url}/completions",
+                    headers=headers,
+                    json=payload,
+                    stream=True
+                )
+                resp.raise_for_status()
+                print('Response: ', end='', flush=True)
+                # Process streaming chunks
+                for line in resp.iter_lines(decode_unicode=True):
+                    #print(line)
+                    if not line:
+                        continue
+                    line = line.strip()
+                    if line == 'data: [DONE]':
+                        break
+                    if line.startswith('data: '):
+                        chunk = json.loads(line[len('data: '):])
+                        token = chunk['content']
+                        print(token, end='', flush=True)
+                        combined_text += token
+                print()  # newline after each prompt stream
+                return combined_text
+                
+            if(args.repeat_until_word_count > 0):
+                count = 0  
+                while count < args.repeat_until_word_count:
+                    text = stream_request()
+                    if(combined_text != ''):
+                        combined_text += ' '
+                    combined_text += text
+                    # Count words in the current combined text
+                    count = len(re.findall(r'\b\w+\b', combined_text))
+                    print(f'Current word count: {count}')
+            else:
+                for _ in range(args.repeat):
+                    text = stream_request()
+                    if(combined_text != ''):
+                        combined_text += ' '
+                    combined_text += text           
 
     # Normalize text
     text = combined_text.lower()
@@ -176,6 +230,8 @@ def main():
         # Pronouns
         'i', 'me', 'you', 'he', 'him', 'she', 'her', 'it', 'we', 'us', 'they', 'them',
         'my', 'your', 'his', 'its', 'our', 'their', 'mine', 'yours', 'hers', 'ours', 'theirs',
+        'this', 'that', 'these', 'those', 'who', 'whom', 'which', 'what', 'where', 'when', 'why',
+        'how', 'whose'
         # Prepositions
         'in', 'on', 'at', 'to', 'for', 'with', 'from', 'by', 'about', 'as', 'into', 'like',
         'through', 'after', 'over', 'between', 'out', 'against', 'during', 'without', 'before',
@@ -186,7 +242,7 @@ def main():
         # Demonstratives
         'this', 'that', 'these', 'those',
         # Other common words
-        'of', 'had', 'has', 'have', 'do', 'does', 'did', 'doing', 'was', 'were', 'be', 'being', 'been', 'is', 'are', 'am', 'not', 'no', 'yes',
+        'of', 'had', 'has', 'have', 'do', 'does', 'did', 'doing', 'was', 'were', 'be', 'being', 'been', 'is', 'are', 'am', 'not', 'no', 'yes', 'up', 'down', 'here', 'there'
     }
     words = [t for t in words if t and t not in stop_words]
     num_words = len(words)

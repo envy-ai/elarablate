@@ -19,6 +19,7 @@ Usage:
 """
 import argparse
 import os
+import random
 import torch
 import torch.nn.functional as F
 from colorist import Color, BrightColor
@@ -251,6 +252,7 @@ def main():
             user_msg = ctx_config.get("user_prompt", default_user_msg).strip()
             response_text = ctx_config.get("response_text", "").strip()
             hparams = ctx_config.get("hyperparameters", {})
+            repeat = ctx_config.get("repeat", 1)
             current_temp = hparams.get("temperature", args.temperature)
             current_top_k = hparams.get("top_k", args.top_k)        
             current_max_threshold = hparams.get("max_threshold", 1 / current_top_k * args.max_threshold_factor)
@@ -263,163 +265,185 @@ def main():
             force_good_tokens = token_rules.get("force_good_tokens", [])
             # Get the token IDs for force_good_tokens
             force_good_token_ids = []
-            for token_str in force_good_tokens:
-                token_id = tokenizer.encode(token_str, add_special_tokens=False)
-                if token_id:
-                    force_good_token_ids.append(token_id[0])
-                else:
-                    print(f"Warning: Token '{token_str}' not found in tokenizer vocabulary.")
             
-            exclude_tokens = token_rules.get("exclude_tokens", [])
-            # Get the token IDs for exclude_tokens
-            exclude_token_ids = []
-            for token_str in exclude_tokens:
-                token_id = tokenizer.encode(token_str, add_special_tokens=False)
-                if token_id:
-                    exclude_token_ids.append(token_id[0])
-                else:
-                    print(f"Warning: Token '{token_str}' not found in tokenizer vocabulary.")
-                                
-            full_prompt = instruct_template \
-                .replace("$system$", system_msg) \
-                .replace("$user$", user_msg) \
-                .replace("$response$", response_text)
-
-            # 1) Recompute prefix hidden states for this exact context
-            model.eval() # Set to eval mode for inference part
-            with torch.no_grad():
-                inputs = tokenizer(full_prompt, return_tensors="pt", add_special_tokens=False) # LLaMA adds bos by default
-                inputs = {k: v.to(model.device) for k,v in inputs.items()}
-                if inputs["input_ids"].shape[1] == 0:
-                    print(f"Warning: Empty input for context {i} after tokenization. Skipping.")
-                    continue
-                outputs = model(**inputs, use_cache=True)
-                pkv = outputs.past_key_values
-                last_id = inputs["input_ids"][0, -1].item()
-            model.train() # Set back to train mode for gradient computation
-
-            # 2) Get next-token distribution for that last_id
-            with torch.no_grad(): # Still no grad for this part
-                id_tensor = torch.tensor([[last_id]], device=model.device)
-                out2 = model(input_ids=id_tensor, past_key_values=pkv)
-                logits = out2.logits[:, -1, :]
-                probs = F.softmax(logits / current_temp, dim=-1)[0]
-
-            # 3) Identify high-prob tokens and apply regex rules
-            top_probs, top_ids = torch.topk(probs, current_top_k)
+            original_response_text = response_text  # Keep original for debugging
             
-            # Add forced tokens to top_probs and top_ids (prob doesn't matter, so set to zero)
-            for token_id in force_good_token_ids:
-                if token_id not in top_ids:
-                    top_probs = torch.cat((top_probs, torch.tensor([0.0], device=model.device)))
-                    top_ids = torch.cat((top_ids, torch.tensor([token_id], device=model.device)))
-                    
-            # Remove excluded tokens from top_ids and top_probs
-            if exclude_token_ids:
-                mask = torch.tensor([t not in exclude_token_ids for t in top_ids], device=model.device)
-                top_probs = top_probs[mask]
-                top_ids = top_ids[mask]
-            if top_probs.numel() == 0:
-                print(f"Warning: No valid tokens left after exclusion for context {i}. Skipping.")
-                continue
-            
-            bad_token_indices_in_topk = []
-            good_token_indices_in_topk = []
+            # repeat x times:
+            for _ in range(repeat):
+                response_text = original_response_text  # Reset user_msg for each repeat
+                # In user_msg, there may be random words specified like this: {red|blue|green|...}
+                # We need to resolve those to actual tokens
 
-            print(f"\nContext {i+1}/{len(context_configs)} (System: '{system_msg[:30]}...', User: '{user_msg[:30]}...'):")
-            print(f"Prompt ends with: ...'{response_text[-50:]}'")
-            print(f"Using temp: {current_temp}, top_k: {current_top_k}, bad_thresh: {current_max_threshold}, good_thresh: {current_min_threshold}")
-            # Print force good tokens, if any
-            if force_good_token_ids:
-                print(f"  Force good tokens: {', '.join([tokenizer.decode([t]) for t in force_good_token_ids])}")
-
-            for k_idx, (p, token_id_val) in enumerate(zip(top_probs.tolist(), top_ids.tolist())):
-                token_str = tokenizer.decode([token_id_val])
-                is_bad = False
-                is_good = False
-                is_force_good = False
-
-                # Check bad regexes first
-                for r in bad_regexes:
-                    if r.search(token_str): # Using search to allow matches not at the beginning
-                        is_bad = True
-                        break
+                # Find all {word1|word2|...} patterns in user_msg (multiline support)
+                pattern = r"\{([^}]+)\}"
                 
-                # If not bad, check good regexes
-                if not is_bad:
-                    for r in good_regexes:
-                        if r.search(token_str):
-                            is_good = True
+                def replace_random_choice(match):
+                    # Extract the content inside braces
+                    content = match.group(1)
+                    # Split by | and strip whitespace (including newlines)
+                    options = [opt for opt in content.split('|')]
+                    # Return a random choice, or empty string if no valid options
+                    return random.choice(options) if options else ""
+                
+                response_text = re.sub(pattern, replace_random_choice, response_text, flags=re.DOTALL | re.MULTILINE)
+                
+                for token_str in force_good_tokens: 
+                    token_id = tokenizer.encode(token_str, add_special_tokens=False)
+                    if token_id:
+                        force_good_token_ids.append(token_id[0])
+                    else:
+                        print(f"Warning: Token '{token_str}' not found in tokenizer vocabulary.")
+                
+                exclude_tokens = token_rules.get("exclude_tokens", [])
+                # Get the token IDs for exclude_tokens
+                exclude_token_ids = []
+                for token_str in exclude_tokens:
+                    token_id = tokenizer.encode(token_str, add_special_tokens=False)
+                    if token_id:
+                        exclude_token_ids.append(token_id[0])
+                    else:
+                        print(f"Warning: Token '{token_str}' not found in tokenizer vocabulary.")
+                                    
+                full_prompt = instruct_template \
+                    .replace("$system$", system_msg) \
+                    .replace("$user$", user_msg) \
+                    .replace("$response$", response_text)
+
+                # 1) Recompute prefix hidden states for this exact context
+                model.eval() # Set to eval mode for inference part
+                with torch.no_grad():
+                    inputs = tokenizer(full_prompt, return_tensors="pt", add_special_tokens=False) # LLaMA adds bos by default
+                    inputs = {k: v.to(model.device) for k,v in inputs.items()}
+                    if inputs["input_ids"].shape[1] == 0:
+                        print(f"Warning: Empty input for context {i} after tokenization. Skipping.")
+                        continue
+                    outputs = model(**inputs, use_cache=True)
+                    pkv = outputs.past_key_values
+                    last_id = inputs["input_ids"][0, -1].item()
+                model.train() # Set back to train mode for gradient computation
+
+                # 2) Get next-token distribution for that last_id
+                with torch.no_grad(): # Still no grad for this part
+                    id_tensor = torch.tensor([[last_id]], device=model.device)
+                    out2 = model(input_ids=id_tensor, past_key_values=pkv)
+                    logits = out2.logits[:, -1, :]
+                    probs = F.softmax(logits / current_temp, dim=-1)[0]
+
+                # 3) Identify high-prob tokens and apply regex rules
+                top_probs, top_ids = torch.topk(probs, current_top_k)
+                
+                # Add forced tokens to top_probs and top_ids (prob doesn't matter, so set to zero)
+                for token_id in force_good_token_ids:
+                    if token_id not in top_ids:
+                        top_probs = torch.cat((top_probs, torch.tensor([0.0], device=model.device)))
+                        top_ids = torch.cat((top_ids, torch.tensor([token_id], device=model.device)))
+                        
+                # Remove excluded tokens from top_ids and top_probs
+                if exclude_token_ids:
+                    mask = torch.tensor([t not in exclude_token_ids for t in top_ids], device=model.device)
+                    top_probs = top_probs[mask]
+                    top_ids = top_ids[mask]
+                if top_probs.numel() == 0:
+                    print(f"Warning: No valid tokens left after exclusion for context {i}. Skipping.")
+                    continue
+                
+                bad_token_indices_in_topk = []
+                good_token_indices_in_topk = []
+
+                print(f"\nContext {i+1}/{len(context_configs)} (System: '{system_msg[:30]}...', User: '{user_msg[:30]}...'):")
+                print(f"Prompt ends with: ...'{response_text[-50:]}'")
+                print(f"Using temp: {current_temp}, top_k: {current_top_k}, bad_thresh: {current_max_threshold}, good_thresh: {current_min_threshold}")
+                # Print force good tokens, if any
+                if force_good_token_ids:
+                    print(f"  Force good tokens: {', '.join([tokenizer.decode([t]) for t in force_good_token_ids])}")
+
+                for k_idx, (p, token_id_val) in enumerate(zip(top_probs.tolist(), top_ids.tolist())):
+                    token_str = tokenizer.decode([token_id_val])
+                    is_bad = False
+                    is_good = False
+                    is_force_good = False
+
+                    # Check bad regexes first
+                    for r in bad_regexes:
+                        if r.search(token_str): # Using search to allow matches not at the beginning
+                            is_bad = True
                             break
                     
-                # Add force_good_tokens check
-                if token_id_val in force_good_token_ids:
-                    is_good = True
-                    is_force_good = True
-                    is_bad = False # Force good takes precedence over bad
-                
-                marker = " "
-                if is_force_good and p < current_min_threshold:
-                    good_token_indices_in_topk.append(token_id_val)
-                    marker = f"{BrightColor.CYAN}↑{Color.OFF}" 
-                elif is_bad:
-                    bad_token_indices_in_topk.append(token_id_val)
-                    marker = f"{Color.RED}↓{Color.OFF}" 
-                elif is_good and p < current_min_threshold: 
-                    good_token_indices_in_topk.append(token_id_val)
-                    marker = f"{Color.GREEN}↑{Color.OFF}" 
-                elif is_good and p > current_max_threshold: 
-                    bad_token_indices_in_topk.append(token_id_val)
-                    marker = f"{Color.GREEN}↓{Color.OFF}"
-                else:
+                    # If not bad, check good regexes
+                    if not is_bad:
+                        for r in good_regexes:
+                            if r.search(token_str):
+                                is_good = True
+                                break
+                        
+                    # Add force_good_tokens check
+                    if token_id_val in force_good_token_ids:
+                        is_good = True
+                        is_force_good = True
+                        is_bad = False # Force good takes precedence over bad
+                    
                     marker = " "
+                    if is_force_good and p < current_min_threshold:
+                        good_token_indices_in_topk.append(token_id_val)
+                        marker = f"{BrightColor.CYAN}↑{Color.OFF}" 
+                    elif is_bad:
+                        bad_token_indices_in_topk.append(token_id_val)
+                        marker = f"{Color.RED}↓{Color.OFF}" 
+                    elif is_good and p < current_min_threshold: 
+                        good_token_indices_in_topk.append(token_id_val)
+                        marker = f"{Color.GREEN}↑{Color.OFF}" 
+                    elif is_good and p > current_max_threshold: 
+                        bad_token_indices_in_topk.append(token_id_val)
+                        marker = f"{Color.GREEN}↓{Color.OFF}"
+                    else:
+                        marker = " "
 
-                print(f" {marker} [{token_id_val}] '{token_str}': {p:.4f}")
+                    print(f" {marker} [{token_id_val}] '{token_str}': {p:.4f}")
 
-            if not bad_token_indices_in_topk and not good_token_indices_in_topk:
-                print("  -- no tokens for adversarial update based on rules and thresholds, skipping backprop for this step.")
-                continue
+                if not bad_token_indices_in_topk and not good_token_indices_in_topk:
+                    print("  -- no tokens for adversarial update based on rules and thresholds, skipping backprop for this step.")
+                    continue
 
-            # 4) Adversarial update (negative-loss for bad, positive-loss for good)
-            optimizer.zero_grad()
-            
-            # Re-run the forward pass for the last token to get logits with gradients
-            id_tensor_grad = torch.tensor([[last_id]], device=model.device)
-            out3 = model(input_ids=id_tensor_grad, past_key_values=pkv)
-            log_probs = F.log_softmax(out3.logits[:, -1, :], dim=-1)
+                # 4) Adversarial update (negative-loss for bad, positive-loss for good)
+                optimizer.zero_grad()
+                
+                # Re-run the forward pass for the last token to get logits with gradients
+                id_tensor_grad = torch.tensor([[last_id]], device=model.device)
+                out3 = model(input_ids=id_tensor_grad, past_key_values=pkv)
+                log_probs = F.log_softmax(out3.logits[:, -1, :], dim=-1)
 
-            step_loss_terms = []
-            for bad_idx_val in bad_token_indices_in_topk:
-                # Penalize: NLL loss, so log_prob is positive for minimization (make prob smaller)
-                loss_term = log_probs[0, bad_idx_val]
-                step_loss_terms.append(loss_term)
-                print(f"  Penalizing token: {tokenizer.decode([bad_idx_val])} (raw log_prob: {loss_term.item():.4f})")
+                step_loss_terms = []
+                for bad_idx_val in bad_token_indices_in_topk:
+                    # Penalize: NLL loss, so log_prob is positive for minimization (make prob smaller)
+                    loss_term = log_probs[0, bad_idx_val]
+                    step_loss_terms.append(loss_term)
+                    print(f"  Penalizing token: {tokenizer.decode([bad_idx_val])} (raw log_prob: {loss_term.item():.4f})")
 
-            for good_idx_val in good_token_indices_in_topk:
-                # Reward: Negative NLL loss, so -log_prob is positive for minimization (make prob_larger)
-                loss_term = -log_probs[0, good_idx_val]
-                step_loss_terms.append(loss_term)
-                print(f"  Rewarding token: {tokenizer.decode([good_idx_val])} (raw -log_prob: {loss_term.item():.4f})")
-            
-            if not step_loss_terms:
-                print("  -- no loss terms generated for this step after all. Skipping backprop.")
-                continue
+                for good_idx_val in good_token_indices_in_topk:
+                    # Reward: Negative NLL loss, so -log_prob is positive for minimization (make prob_larger)
+                    loss_term = -log_probs[0, good_idx_val]
+                    step_loss_terms.append(loss_term)
+                    print(f"  Rewarding token: {tokenizer.decode([good_idx_val])} (raw -log_prob: {loss_term.item():.4f})")
+                
+                if not step_loss_terms:
+                    print("  -- no loss terms generated for this step after all. Skipping backprop.")
+                    continue
 
-            current_step_loss = torch.stack(step_loss_terms).sum()
-            
-            # Normalize loss by number of terms to make learning rate less sensitive to 
-            # of bad/good tokens
-            # Note: I'm not convinced this is actually a good idea, because it amplifies
-            # loss that's not the average of larger numbers of terms, which could have rough
-            # edges.  Also, from the standpoint of each token being a separate loss term,
-            # it doesn't make sense to average them.  Disabling for now.
-            #current_step_loss = current_step_loss.mul(1.0 / len(step_loss_terms))             
-            
-            print(f"  Step loss: {current_step_loss.item():.4f} for {len(step_loss_terms)} tokens")
-            current_step_loss.backward()
-            optimizer.step()
-            
-            epoch_losses.append(current_step_loss.item())
+                current_step_loss = torch.stack(step_loss_terms).sum()
+                
+                # Normalize loss by number of terms to make learning rate less sensitive to 
+                # of bad/good tokens
+                # Note: I'm not convinced this is actually a good idea, because it amplifies
+                # loss that's not the average of larger numbers of terms, which could have rough
+                # edges.  Also, from the standpoint of each token being a separate loss term,
+                # it doesn't make sense to average them.  Disabling for now.
+                #current_step_loss = current_step_loss.mul(1.0 / len(step_loss_terms))             
+                
+                print(f"  Step loss: {current_step_loss.item():.4f} for {len(step_loss_terms)} tokens")
+                current_step_loss.backward()
+                optimizer.step()
+                
+                epoch_losses.append(current_step_loss.item())
 
         if epoch_losses:
             avg_epoch_loss = sum(epoch_losses) / len(epoch_losses)

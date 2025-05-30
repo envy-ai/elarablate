@@ -1,5 +1,6 @@
 system_prompt: "You are an AI creative writing assistant specializing in fantasy and sci-fi."
 user_prompt: "Write a fantasy story."
+repeat: 2
 response_text: |
   In the bustling, vibrant city of Elyria, where humans, elves, dwarves, and other races coexisted, Eric, a humble human farmer, had a problem. His crops were mysteriously disappearing, and he was convinced that someone was stealing them. Desperate for a solution, he decided to visit a renowned elven alchemist known for her potent potions and elixirs.
 
@@ -7,23 +8,21 @@ response_text: |
 
   Taking a deep breath, Eric pushed open the door and stepped into the dimly lit shop. The air was thick with the scent of herbs and spices, and the shelves were lined with colorful bottles and vials of various potions. A tall and graceful elf with long silver hair looked up from her workbench and smiled warmly at Eric.
 
-  "Welcome, traveler. My name is Am
+  "Welcome, friend. My name is {Elara|Astra|Lirael|Melyndra|Sylvana|Elysia|Aeliana|Celestria|Thalindra|Nymeria|Seraphine|Lyriel|Isolde|Caladwen|Aranel|Galadriel|Vespera|Talyndra|Zyphira|Oriana|Jasmina|Selene|Eirlys|Coralyn|Miralys|Sarah|Rhiannon|Lunara|Althea|Elowen|Amariel|Illyria|Galatea|Cassandra|Andromeda|Astrid|Larissa|Morwenna|Kalyndra|Tamsin|Nimue|Vespera|Celestia|Valeria|Talindra||Ophelia|Jasmine}
 # --- Generation & Adversarial Hyperparameters (optional, will use script defaults if not set) ---
 hyperparameters:
   temperature: 0.7
-  top_k: 25
-  #max_threshold: 0.08 
-  #min_threshold: 0.05
-  
+  top_k: 10
+  max_threshold: 1
+  min_threshold: 0.05
+
 # --- Token Rules (Regular Expressions) ---
 token_rules:
   # Regexes matching tokens to be penalized (bad tokens)
   # These are Python regexes. ^ denotes start of token string, $ denotes end.
   bad_token_regexes:
-    - "^ "               # Penalize any token that starts with a space
-    - "^[^a-z]"          # Penalize any token that doesn't start with a lowercase letter
-
+    - "^[a-zA-Z]+"             # Penalize any token that doesn't start with period or space
   # Regexes matching tokens to be rewarded (good tokens)
-  # Bad rules override good rules if a token matches both.
-  good_token_regexes:
-    - "^[a-z]"         # Reward any token that starts with a lowercase letter
+  #good_token_regexes:
+  #  - "^ .*"                 # Reward any token that starts with a capital letter
+  #  - "^\\."                 # Reward any token that starts with a lowercase letter

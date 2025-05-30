@@ -1,5 +1,6 @@
 system_prompt: "You are an AI creative writing assistant specializing in fantasy and sci-fi."
 user_prompt: "Write a fantasy story."
+repeat: 2
 response_text: |
   In the bustling, vibrant city of Elyria, where humans, elves, dwarves, and other races coexisted, Eric, a humble human farmer, had a problem. His crops were mysteriously disappearing, and he was convinced that someone was stealing them. Desperate for a solution, he decided to visit a renowned elven alchemist known for her potent potions and elixirs.
 
@@ -7,14 +8,14 @@ response_text: |
 
   Taking a deep breath, Eric pushed open the door and stepped into the dimly lit shop. The air was thick with the scent of herbs and spices, and the shelves were lined with colorful bottles and vials of various potions. A tall and graceful elf with long silver hair looked up from her workbench and smiled warmly at Eric.
 
-  "Welcome, traveler. My name is Am
+  "Welcome, traveler. My name is {Ale|Ary|Ly|Mel|Ny|En|Sylv|Eld|Ser|Mir|Ry|My|Silver|Y|Ad|Il|Gal|C|R|L|Al|El|Am|I|A|K|Cal|And|Astr|An|Lar|Mor|Ka|T|N|V|Cel|Val|Tal|D|Z|O|J|Sel|S|E|Cor|M|G}
 # --- Generation & Adversarial Hyperparameters (optional, will use script defaults if not set) ---
 hyperparameters:
   temperature: 0.7
-  top_k: 25
+  top_k: 10
   #max_threshold: 0.08 
   #min_threshold: 0.05
-  
+
 # --- Token Rules (Regular Expressions) ---
 token_rules:
   # Regexes matching tokens to be penalized (bad tokens)
