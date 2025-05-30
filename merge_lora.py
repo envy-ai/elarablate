@@ -30,6 +30,7 @@ import os
 import re
 import shutil
 from pathlib import Path
+import numpy as np
 
 import safetensors
 import torch
@@ -91,6 +92,17 @@ def find_lora_weights(key):
     assert not ((lora_A is None) ^ (lora_B is None))
     return lora_A, lora_B
 
+def find_lora_weights(key):
+    a = b = None
+    prefix = key.replace('.weight', '')
+    for lk, lw in lora_state.items():
+        if prefix in lk:
+            if 'lora_A' in lk:
+                a = lw
+            elif 'lora_B' in lk:
+                b = lw
+    assert (a is None) == (b is None), f"Missing LoRA A or B for {prefix}"
+    return a, b
 
 shards = []
 for shard in input_path.glob('model*.safetensors'):
@@ -132,6 +144,8 @@ for filepath in input_path.glob('*'):
 
 print('Merging and copying state_dict to output')
 found = 0
+strengths_l2 = []
+strengths_l1 = []
 for shard in (pbar := tqdm(shards)):
     tensors = {}
     if shard.name in lora_shards:
@@ -163,6 +177,10 @@ for shard in (pbar := tqdm(shards)):
                             tensor = tensor.to(torch.float32)
                             tensor += scale * lora_B.to(torch.float32) @ lora_A.to(torch.float32)
                             tensor = tensor.to(old_type)
+                            
+                            delta = (lora_B.to(torch.float32) @ lora_A.to(torch.float32))
+                            strengths_l2.append(torch.norm(delta).item())
+                            strengths_l1.append(torch.mean(delta.abs()).item())
                 tensors[key] = tensor
             safetensors.torch.save_file(tensors, output_path / shard.name, metadata=metadata)
     else:
@@ -170,3 +188,13 @@ for shard in (pbar := tqdm(shards)):
         print(f'Copying {shard.name} to output')
         shutil.copy(shard, output_path / shard.name)
 print(f"Applied LoRA to {found} tensors.")
+
+if strengths_l2:
+    mean_l2 = float(np.mean(strengths_l2))
+    median_l2 = float(np.median(strengths_l2))
+    mean_l1 = float(np.mean(strengths_l1))
+    median_l1 = float(np.median(strengths_l1))
+    print(f"LoRA strength (L2 norm) - mean: {mean_l2:.6f}, median: {median_l2:.6f}")
+    print(f"LoRA strength (mean abs) - mean: {mean_l1:.6f}, median: {median_l1:.6f}")
+else:
+    print('No LoRA strength metrics computed; check target_modules vs state keys.')

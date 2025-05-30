@@ -1,0 +1,26 @@
+system_prompt: "You are an AI creative writing assistant specializing in fantasy and sci-fi."
+user_prompt: "Write a fantasy story."
+response_text: |
+  Joren stared into the crackling flames, the flickering light casting eerie shadows across his face. The night air hung heavy with a somber silence, broken only by the occasional snapping of twigs in the fire. Across from him, Kestra leaned against a gnarled oak, her pointed ears twitching as a distant owl hooted.
+
+  "Kestra," Joren began, his tone hushed and solemn, "I've been wondering... about that night. The one when your parents were killed."
+
+  The elf stiffened almost imperceptibly. Her green eyes seemed to darken as she gazed into the distance, memories long buried rising to the surface.
+
+  "The night dark elves raided your village," Joren pressed on gently. The muscles in his jaw clenched. He could see the anguish etched across her delicate features. But he had to know. For both their sakes.
+
+  "I remember," Kestra said
+# --- Generation & Adversarial Hyperparameters (optional, will use script defaults if not set) ---
+hyperparameters:
+  temperature: 0.7
+  top_k: 10
+  max_threshold: 1
+  min_threshold: 0.35
+
+# --- Token Rules (Regular Expressions) ---
+# In this one, we're training to show it that it's okay to occasionally just say "she said."
+token_rules:
+  force_good_tokens:
+    - "."
+  bad_token_regexes:
+    - "^[a-z]"

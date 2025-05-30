@@ -1,0 +1,26 @@
+system_prompt: "You are an AI creative writing assistant specializing in fantasy and sci-fi."
+user_prompt: "Write a story scene where a man named Thomas and his elven companion Taris are sitting in their campsite at dusk. Thomas is asking about the night Taris' parents were murdered."
+response_text: |
+  The fire crackled, casting flickering shadows across the small clearing. Thomas sat cross-legged on a worn blanket, his weathered hands cradling a steaming mug of tea. Across from him, Taris perched on a fallen log, silhouetted against the dying light of dusk.
+
+  The air was heavy with unspoken questions, the silence between them thick as the forest that surrounded their campsite. Thomas took a slow sip of his tea, the warmth spreading through his chest as he gathered his thoughts. He had known Taris for many years now, had fought alongside him in countless battles, but there was still so much he didn't know about his past.
+
+  "Taris," he began, his voice low and gentle, "I've been meaning to ask you something. About your parents."
+
+  Taris stiffened almost imperceptibly, his fingers tightening around the hilt of his dagger. He had always been guarded about his past, but Thomas had seen glimpses of the pain he carried. He wanted to understand, to help him carry that burden if he could.
+
+  "What about them?" he asked
+# --- Generation & Adversarial Hyperparameters (optional, will use script defaults if not set) ---
+hyperparameters:
+  temperature: 0.7
+  top_k: 10
+  max_threshold: 1
+  min_threshold: 0.25
+
+# --- Token Rules (Regular Expressions) ---
+# In this one, we're training to show it that it's okay to occasionally just say "she said."
+token_rules:
+  force_good_tokens:
+    - ".\n\n"
+  bad_token_regexes:
+    - "^[a-z]"

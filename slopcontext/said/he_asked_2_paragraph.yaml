@@ -1,0 +1,24 @@
+system_prompt: "You are an AI creative writing assistant specializing in fantasy and sci-fi."
+user_prompt: "Write a fantasy story about a man hiring a male human wizard."
+response_text: |
+  The sun had long since set over the bustling streets of Willowbrook. Merchants had packed up their wares, the taverns were filled with the sounds of laughter and clinking glasses, and the city guards were making their nightly rounds. Amidst this evening chaos, a lone figure emerged from the shadows. He was tall, with piercing blue eyes and jet-black hair that fell to his shoulders. His dark robes billowed behind him as he strode purposefully through the winding streets, his staff tapping out a rhythmic beat on the cobblestones.
+
+  This was Malakai, a wizard of some renown in these parts. His services were often sought after by those in need of arcane assistance, whether it be to ward off evil spirits, divine the future, or simply to impress one's friends at a dinner party. Malakai took his craft seriously, and he was known to be quite particular about the company he kept. Only those with the purest of intentions and the deepest of pockets were granted an audience with the enigmatic mage.
+
+  As he turned a corner, Malakai noticed a man standing outside a small, unassuming shop. The sign above the door read "Curios and Antiques," and the windows were filled with an assortment of strange and exotic items. The man, who appeared to be in his mid-40s, was dressed in fine but practical clothing. He wore a sword at his hip and had the look of someone who was not to be trifled with.
+
+  Malakai approached the man, his eyes narrowing slightly as he took in the stranger's appearance. "Can I help you?" he asked
+# --- Generation & Adversarial Hyperparameters (optional, will use script defaults if not set) ---
+hyperparameters:
+  temperature: 0.7
+  top_k: 10
+  max_threshold: 1
+  min_threshold: 0.25
+
+# --- Token Rules (Regular Expressions) ---
+# In this one, we're training to show it that it's okay to occasionally just say "she said."
+token_rules:
+  force_good_tokens:
+    - ".\n\n"
+  bad_token_regexes:
+    - "^[a-z]"

@@ -35,7 +35,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_name_or_path", required=True)
     parser.add_argument("--contexts_folder", required=True,
-                        help="Folder containing context YAML files (one .yaml/.yml per file).")
+                        help="Folder containing context YAML files (one .yaml/.yml per file).  Will be searched recursively.")
     parser.add_argument("--output_dir", required=True)
     # Default hyperparameters (can be overridden by YAML)
     parser.add_argument("--temperature", type=float, default=1.0)
@@ -51,7 +51,7 @@ def main():
     parser.add_argument("--cache_quantized_model_dir", type=str, default=None,
                         help="Path to cache quantized model.  If not provided, model will not be cached after quantization.")
     parser.add_argument("--quant_type", type=str, default="nf4",
-                        choices=["int8", "nf4"],)
+                        choices=["int8", "nf4", "fp8"],)
     
 
     parser.add_argument("--max_threshold_factor", type=float, default=1, help="Max threshold is 1 / top_k * max_threshold_factor.")
@@ -104,9 +104,15 @@ def main():
             bnb_4bit_quant_type="nf4",
             bnb_4bit_compute_dtype=torch.float16,
         )
+    elif args.quant_type == "fp8":
+        bnb_config = BitsAndBytesConfig(
+        load_in_8bit=True,
+        llm_int8_enable_fp32_cpu_offload=False,
+        # FP8 specific configurations - these may vary based on implementation
+        bnb_8bit_quant_type="fp8_e4m3fn",  # if supported directly
+        bnb_8bit_compute_dtype=torch.float8_e4m3fn,  # PyTorch 2.1+ dtype
+    )
 
-    # Load base model in 4-bit
-    # TODO: Handle different model classes if not just LlamaForCausalLM
     if args.model_type == "llama":
         model_class = LlamaForCausalLM
     # elif args.model_type == "qwen":
@@ -121,7 +127,7 @@ def main():
     base_model = model_class.from_pretrained(
         args.model_name_or_path,
         quantization_config=bnb_config,
-        device_map="auto",
+        device_map="cuda",
         trust_remote_code=True
     )
     
@@ -129,6 +135,10 @@ def main():
         # Save the quantized model to the specified directory
         os.makedirs(args.cache_quantized_model_dir, exist_ok=True)
         base_model.save_pretrained(args.cache_quantized_model_dir)
+        # Save the tokenizer to the same directory
+        tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path, use_fast=True)
+        tokenizer.save_pretrained(args.cache_quantized_model_dir)
+        
         print(f"Quantized model cached at: {args.cache_quantized_model_dir}")
 
     # Wrap with LoRA adapters
@@ -192,32 +202,40 @@ def main():
             model.resize_token_embeddings(len(tokenizer))
 
 
-    # Read and parse all context configurations from YAML files
+    # Read and parse all context configurations from YAML files recursively
     context_configs = []
-    print(f"Loading contexts from: {args.contexts_folder}")
-    for fname in sorted(os.listdir(args.contexts_folder)):
-        if not (fname.lower().endswith(".yaml") or fname.lower().endswith(".yml")):
-            continue
-        path = os.path.join(args.contexts_folder, fname)
-        try:
-            with open(path, 'r', encoding="utf-8") as f:
-                config = yaml.safe_load(f)
-                # Compile regexes for efficiency
-                if "token_rules" in config and "bad_token_regexes" in config["token_rules"]:
-                    config["token_rules"]["bad_token_regexes_compiled"] = [
-                        re.compile(r) for r in config["token_rules"]["bad_token_regexes"]
-                    ]
-                if "token_rules" in config and "good_token_regexes" in config["token_rules"]:
-                    config["token_rules"]["good_token_regexes_compiled"] = [
-                        re.compile(r) for r in config["token_rules"]["good_token_regexes"]
-                    ]
-                context_configs.append(config)
-                print(f"  Loaded context: {fname}")
-        except Exception as e:
-            print(f"Error loading or parsing YAML file {path}: {e}")
+    print(f"Loading contexts recursively from: {args.contexts_folder}")
     
+    # Walk through directory tree recursively
+    for root, dirs, files in os.walk(args.contexts_folder):
+        # Sort files for consistent ordering
+        for fname in sorted(files):
+            if not (fname.lower().endswith(".yaml") or fname.lower().endswith(".yml")):
+                continue
+            path = os.path.join(root, fname)
+            
+            # Create relative path for cleaner display
+            rel_path = os.path.relpath(path, args.contexts_folder)
+            
+            try:
+                with open(path, 'r', encoding="utf-8") as f:
+                    config = yaml.safe_load(f)
+                    # Compile regexes for efficiency
+                    if "token_rules" in config and "bad_token_regexes" in config["token_rules"]:
+                        config["token_rules"]["bad_token_regexes_compiled"] = [
+                            re.compile(r) for r in config["token_rules"]["bad_token_regexes"]
+                        ]
+                    if "token_rules" in config and "good_token_regexes" in config["token_rules"]:
+                        config["token_rules"]["good_token_regexes_compiled"] = [
+                            re.compile(r) for r in config["token_rules"]["good_token_regexes"]
+                        ]
+                    context_configs.append(config)
+                    print(f"  Loaded context: {rel_path}")
+            except Exception as e:
+                print(f"Error loading or parsing YAML file {path}: {e}")
+   
     if not context_configs:
-        print(f"No YAML context files found in {args.contexts_folder}. Exiting.")
+        print(f"No YAML context files found in {args.contexts_folder} (searched recursively). Exiting.")
         return
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
@@ -232,10 +250,6 @@ def main():
             system_msg = ctx_config.get("system_prompt", default_system_msg).strip()
             user_msg = ctx_config.get("user_prompt", default_user_msg).strip()
             response_text = ctx_config.get("response_text", "").strip()
-            if not response_text:
-                print(f"Warning: Context {i} has no response_text. Skipping.")
-                continue
-
             hparams = ctx_config.get("hyperparameters", {})
             current_temp = hparams.get("temperature", args.temperature)
             current_top_k = hparams.get("top_k", args.top_k)        
@@ -253,6 +267,16 @@ def main():
                 token_id = tokenizer.encode(token_str, add_special_tokens=False)
                 if token_id:
                     force_good_token_ids.append(token_id[0])
+                else:
+                    print(f"Warning: Token '{token_str}' not found in tokenizer vocabulary.")
+            
+            exclude_tokens = token_rules.get("exclude_tokens", [])
+            # Get the token IDs for exclude_tokens
+            exclude_token_ids = []
+            for token_str in exclude_tokens:
+                token_id = tokenizer.encode(token_str, add_special_tokens=False)
+                if token_id:
+                    exclude_token_ids.append(token_id[0])
                 else:
                     print(f"Warning: Token '{token_str}' not found in tokenizer vocabulary.")
                                 
@@ -289,6 +313,15 @@ def main():
                 if token_id not in top_ids:
                     top_probs = torch.cat((top_probs, torch.tensor([0.0], device=model.device)))
                     top_ids = torch.cat((top_ids, torch.tensor([token_id], device=model.device)))
+                    
+            # Remove excluded tokens from top_ids and top_probs
+            if exclude_token_ids:
+                mask = torch.tensor([t not in exclude_token_ids for t in top_ids], device=model.device)
+                top_probs = top_probs[mask]
+                top_ids = top_ids[mask]
+            if top_probs.numel() == 0:
+                print(f"Warning: No valid tokens left after exclusion for context {i}. Skipping.")
+                continue
             
             bad_token_indices_in_topk = []
             good_token_indices_in_topk = []

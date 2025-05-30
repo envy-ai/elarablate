@@ -1,0 +1,24 @@
+system_prompt: "You are an AI creative writing assistant specializing in fantasy and sci-fi."
+user_prompt: "Write a fantasy story about a man hiring a female human sorceress."
+response_text: |
+  In the realm of
+# --- Generation & Adversarial Hyperparameters (optional, will use script defaults if not set) ---
+hyperparameters:
+  temperature: 0.7
+  top_k: 50
+  #max_threshold: 0.08 
+  #min_threshold: 0.05
+
+# --- Token Rules (Regular Expressions) ---
+token_rules:
+  # Regexes matching tokens to be penalized (bad tokens)
+  # These are Python regexes. ^ denotes start of token string, $ denotes end.
+  bad_token_regexes:
+    - "^[^ ]"               # Penalize any token that doesn't start with a space (if desired)
+    - "^ [^A-Z]"          # Penalize any token that starts with a space and then something
+                          # other than a capital letter
+
+  # Regexes matching tokens to be rewarded (good tokens)
+  # Bad rules override good rules if a token matches both.
+  good_token_regexes:
+    - "^ [A-Z]"         # Reward any token that starts with space and then a capital letter

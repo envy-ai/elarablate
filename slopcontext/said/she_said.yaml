@@ -14,11 +14,11 @@ response_text: |
 hyperparameters:
   temperature: 0.7
   top_k: 10
-  max_threshold: 0.2
-  min_threshold: 0.15
+  max_threshold: 1
+  min_threshold: 0.3
 
 # --- Token Rules (Regular Expressions) ---
-In this one, we're training to show it that it's okay to occasionally just say "she said."
+# In this one, we're training to show it that it's okay to occasionally just say "she said."
 token_rules:
   force_good_tokens:
     - "."

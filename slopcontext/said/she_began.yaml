@@ -1,34 +1,27 @@
 system_prompt: "You are an AI creative writing assistant specializing in fantasy and sci-fi."
-user_prompt: "Write a story scene where a man named Thomas and his elven companion Taris are sitting in their campsite at dusk. Thomas is asking about the night Taris' parents were murdered."
+user_prompt: "Write a fantasy story."
 response_text: |
   The fire crackled, casting flickering shadows across the small clearing. Thomas sat cross-legged on a worn blanket, his weathered hands cradling a steaming mug of tea. Across from him, Taris perched on a fallen log, her lithe elven form silhouetted against the dying light of dusk.
-
   The air was heavy with unspoken questions, the silence between them thick as the forest that surrounded their campsite. Thomas took a slow sip of his tea, the warmth spreading through his chest as he gathered his thoughts. He had known Taris for many years now, had fought alongside her in countless battles, but there was still so much he didn't know about her past.
-
   "Taris," he began, his voice low and gentle, "I've been meaning to ask you something. About your parents."
-
   Taris stiffened almost imperceptibly, her fingers tightening around the hilt of her dagger. She had always been guarded about her past, but Thomas had seen glimpses of the pain she carried. He wanted to understand, to help her carry that burden if he could.
-
-  "What about them?" she asked, her voice carefully neutral.
-
-  Thomas set his mug aside, leaning forward slightly. "I know their death was...traumatic for you. But I've never heard the full story. What happened that night?"
-
-  Taris was silent for a long moment, her gaze fixed on some distant point beyond the firelight. When she finally spoke, her
+  "What about them?" she asked, her tone carefully neutral.
+  Thomas hesitated, choosing his words with care. "I know it's not an easy topic, but…I've always wondered. What happened that night? When you were just a child and Jorin's men killed your family."
+  Taris's eyes darted away, her gaze falling into the shadows. "It was a long time ago," she murmured. "I don't see why it matters now."
+  "Because it shaped who you are," Thomas replied softly. "And I want to understand you, to know what drives you. If you're willing to share, that is."
+  The elf's shoulders rose and fell in a slow, tense breath. For a long moment, Thomas worried he had overstepped, that she would shut herself away and refuse to speak. But then, almost imperceptibly, Taris nodded.
+  "I was eight," she began
 # --- Generation & Adversarial Hyperparameters (optional, will use script defaults if not set) ---
 hyperparameters:
   temperature: 0.7
   top_k: 10
-  #max_threshold: 0.08 
-  #min_threshold: 0.05
+  max_threshold: 1
+  min_threshold: 0.3
 
 # --- Token Rules (Regular Expressions) ---
+# In this one, we're training to show it that it's okay to occasionally just say "she said."
 token_rules:
-  # Regexes matching tokens to be penalized (bad tokens)
-  # These are Python regexes. ^ denotes start of token string, $ denotes end.
+  force_good_tokens:
+    - "."
   bad_token_regexes:
-    - "^[^ ]"               # Penalize any token that doesn't start with a space
-
-  # Regexes matching tokens to be rewarded (good tokens)
-  # Bad rules override good rules if a token matches both.
-  good_token_regexes:
-    - "^ [a-z]"         # Reward any token that starts with space and then a lowercase letter
+    - "^[a-z]"

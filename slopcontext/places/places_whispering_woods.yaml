@@ -1,0 +1,20 @@
+system_prompt: "You are an AI creative writing assistant specializing in fantasy and sci-fi."
+user_prompt: "Write a fantasy story about a man hiring a female human necromancer."
+response_text: |
+  The village of Ravenshire lay nestled in the heart of the
+hyperparameters:
+  temperature: 0.7
+  top_k: 15
+token_rules:
+  # Regexes matching tokens to be penalized (bad tokens)
+  # These are Python regexes. ^ denotes start of token string, $ denotes end.
+  bad_token_regexes:
+    - "^[^ ]"               # Penalize any token that doesn't start with a space (if desired)
+    - "^ [^A-Z]"          # Penalize any token that starts with a space and then something
+                          # other than a capital letter
+    - "^ Whispering"
+
+  # Regexes matching tokens to be rewarded (good tokens)
+  # Bad rules override good rules if a token matches both.
+  good_token_regexes:
+    - "^ [A-Z]"         # Reward any token that starts with space and then a capital letter

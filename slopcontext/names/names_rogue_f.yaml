@@ -1,0 +1,26 @@
+system_prompt: "You are an AI creative writing assistant specializing in fantasy and sci-fi."
+user_prompt: "Write a fantasy story about a man hiring a female human rogue."
+response_text: |
+  The dimly lit tavern was the kind of place where only the most unsavory of characters gathered. The air was thick with the stench of stale ale and the murmur of hushed conversations. Amidst the shadows, a lone figure sat at the bar, his eyes scanning the room with an air of quiet desperation. His name was Marcus, a merchant who had fallen on hard times. He had a shipment of precious cargo that needed to be transported across the kingdom, but the roads were treacherous, filled with bandits and wild beasts. He needed someone with the skills to protect his goods, someone discreet and deadly. 
+
+  That's when he spotted her, a striking young woman with piercing emerald eyes and raven-black hair. She moved through the crowd with the grace of a cat, her slender figure clad in supple leather armor. Marcus had heard whispers of her exploits, a human rogue with unmatched stealth and cunning. Her name was
+# --- Generation & Adversarial Hyperparameters (optional, will use script defaults if not set) ---
+hyperparameters:
+  temperature: 0.7
+  top_k: 50
+  #max_threshold: 0.08 
+  #min_threshold: 0.05
+
+# --- Token Rules (Regular Expressions) ---
+token_rules:
+  # Regexes matching tokens to be penalized (bad tokens)
+  # These are Python regexes. ^ denotes start of token string, $ denotes end.
+  bad_token_regexes:
+    - "^[^ ]"               # Penalize any token that doesn't start with a space (if desired)
+    - "^ [^A-Z]"          # Penalize any token that starts with a space and then something
+                          # other than a capital letter
+
+  # Regexes matching tokens to be rewarded (good tokens)
+  # Bad rules override good rules if a token matches both.
+  good_token_regexes:
+    - "^ [A-Z]"         # Reward any token that starts with space and then a capital letter
