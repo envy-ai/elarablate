@@ -1,0 +1,23 @@
+system_prompt: "You are an AI creative writing assistant specializing in fantasy and sci-fi."
+user_prompt: "Continue this excerpt of an erotic story about a man having a naughty conversation with a mischievous forest pixie."
+response_text: |
+  "I'm giving you the gift of size," Lila said. "Now, you shall see the world from a pixie's perspective." She took his hand, and they both shrunk down to her size.
+  They explored the forest together, Lila pointing out the hidden wonders of her realm. As they journeyed, their conversation grew more intimate. Lila asked about Arin's cherished memories, and he found himself opening up about his deepest desires and fears.
+  In turn, she shared with him the secrets of her kind. She told him of their sexual rituals and the way they used their bodies to harness the forest's energy.
+  "You see, we believe in the power of pleasure," Lila said, her voice
+# --- Generation & Adversarial Hyperparameters (optional, will use script defaults if not set) ---
+hyperparameters:
+  temperature: 0.7
+  top_k: 10
+  #max_threshold: 0.08 
+  #min_threshold: 0.05
+
+# --- Token Rules (Regular Expressions) ---
+token_rules:
+  # Regexes matching tokens to be penalized (bad tokens)
+  # These are Python regexes. ^ denotes start of token string, $ denotes end.
+  bad_token_regexes:
+    - "^[^ ]"               # Penalize any token that doesn't start with a space
+
+  good_token_regexes:
+    - "^ [a-z]"         # Reward any token that starts with space and then a lowercase letter

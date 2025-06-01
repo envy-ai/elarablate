@@ -11,7 +11,7 @@ response_text: |
 # --- Generation & Adversarial Hyperparameters (optional, will use script defaults if not set) ---
 hyperparameters:
   temperature: 0.7
-  top_k: 25
+  top_k: 10
   #max_threshold: 0.08 
   #min_threshold: 0.05
   

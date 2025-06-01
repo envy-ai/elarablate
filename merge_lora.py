@@ -39,14 +39,31 @@ from tqdm import tqdm
 
 import peft
 
+class LoraAction(argparse.Action):
+    def __call__(self, parser, namespace, values, option_string=None):
+        if len(values) % 2 != 0:
+            parser.error(f"{option_string} requires pairs of arguments: [path] [scale]")
+        
+        lora_configs = []
+        for i in range(0, len(values), 2):
+            path = values[i]
+            try:
+                scale = float(values[i + 1])
+                lora_configs.append((path, scale))
+            except ValueError:
+                parser.error(f"Scale value '{values[i + 1]}' is not a valid float")
+        
+        setattr(namespace, self.dest, lora_configs)
 
 parser = argparse.ArgumentParser()
 parser.add_argument('input_path', type=str, help='The path to the input directory.')
-parser.add_argument('lora_path', type=str, help='The path to the LoRA directory.')
+#parser.add_argument('lora_path', type=str, help='The path to the LoRA directory.')
 parser.add_argument('output_path', type=str, help='The path to the output directory.')
 parser.add_argument('--no-gpu', action='store_true', help='Use CPU for merging. Probably unnecessary unless each individual shard is too large to fit in GPU memory.')
-parser.add_argument('--scale', type=float, default=2.0, help='LoRA scale to apply (2 seems to work well).')
-parser.add_argument('--layer_range', type=str, default='59-79', help='Range of layers to apply LoRA to. Default is 59-79, for 70B llama models.')
+parser.add_argument('--layer_range', type=str, default='49-79', help='Range of layers to apply LoRA to. Default is 59-79, for 70B llama models.')
+parser.add_argument('--lora', nargs='*', action=LoraAction, default=[], required=True,
+                    help='LoRA configurations as pairs: [path] [scale] [path] [scale] ...')
+parser.add_argument('--scale_all', type=float, default=1.0, help='Scale all lora weights by this factor. Default is 1.0.')
 args = parser.parse_args()
 
 start_layer, end_layer = map(int, args.layer_range.split('-'))
@@ -55,47 +72,15 @@ if start_layer > end_layer:
 if start_layer < 0 or end_layer < 0:
     raise ValueError(f'Invalid layer range: {args.layer_range}. Start and end layers must be non-negative.')
 
-input_path, lora_path, output_path = Path(args.input_path), Path(args.lora_path), Path(args.output_path)
+input_path, output_path = Path(args.input_path), Path(args.output_path)
 os.makedirs(output_path, exist_ok=True)
-
-lora_config = peft.LoraConfig.from_json_file(lora_path / 'adapter_config.json')
-scale = lora_config['lora_alpha'] / lora_config['r'] * args.scale
-
-print(f'Using LoRA scale: {scale}')
 
 device = 'cpu' if args.no_gpu else 'cuda'
 
-print('Loading LoRA model...')
-
-# Check if we have adapter_model.bin or adapter_model.safetensors
-if (lora_path / 'adapter_model.safetensors').exists():
-    lora_state = safetensors.torch.load_file(lora_path / 'adapter_model.safetensors')
-    if not args.no_gpu:
-        # Move mapped entries to cuda
-        for key, value in tqdm(lora_state.items()):
-            lora_state[key] = value.to('cuda')
-else:
-    lora_state = torch.load(lora_path / 'adapter_model.bin', map_location=device)
-
-
-def find_lora_weights(key):
-    lora_A = None
-    lora_B = None
-    for lora_key, lora_weight in lora_state.items():
-        if key.strip('.weight') in lora_key:
-            if 'lora_A' in lora_key:
-                lora_A = lora_weight
-            elif 'lora_B' in lora_key:
-                lora_B = lora_weight
-            else:
-                raise RuntimeError()
-    assert not ((lora_A is None) ^ (lora_B is None))
-    return lora_A, lora_B
-
-def find_lora_weights(key):
+def find_lora_weights(key, lora_path):
     a = b = None
     prefix = key.replace('.weight', '')
-    for lk, lw in lora_state.items():
+    for lk, lw in lora_state[lora_path].items():
         if prefix in lk:
             if 'lora_A' in lk:
                 a = lw
@@ -103,6 +88,33 @@ def find_lora_weights(key):
                 b = lw
     assert (a is None) == (b is None), f"Missing LoRA A or B for {prefix}"
     return a, b
+
+
+
+print('Loading LoRA models...')
+
+lora_state = {}
+scale = {}
+for lora_path, lora_scale in args.lora:
+    lora_config = peft.LoraConfig.from_json_file(lora_path + '/adapter_config.json')
+    scale[lora_path] = lora_config['lora_alpha'] / lora_config['r'] * lora_scale * args.scale_all
+    
+    lora_path_path = Path(lora_path)
+    if not lora_path_path.exists():
+        raise FileNotFoundError(f'LoRA path {lora_path} does not exist.')
+    if not lora_path_path.is_dir():
+        raise NotADirectoryError(f'LoRA path {lora_path} is not a directory.')
+    print(f'Loading LoRA from {lora_path}')
+    print(f'Using LoRA scale: {scale[lora_path]}')
+    # Check if we have adapter_model.bin or adapter_model.safetensors
+    
+
+    lora_state[lora_path] = safetensors.torch.load_file(lora_path + '/adapter_model.safetensors')
+    if not args.no_gpu:
+        # Move mapped entries to cuda
+        for key, value in tqdm(lora_state[lora_path].items()):
+            lora_state[lora_path][key] = value.to('cuda')
+
 
 shards = []
 for shard in input_path.glob('model*.safetensors'):
@@ -166,21 +178,23 @@ for shard in (pbar := tqdm(shards)):
                     if layer_num < start_layer or layer_num > end_layer:
                         print(f'Skipping because {layer_num} is outside of range') # Skip this key if 
                     else:
-                        lora_A, lora_B = find_lora_weights(lora_key)
-                        if lora_A is not None:
-                            print(f'Found LoRA weights for {key}: {lora_A.size()}, {lora_B.size()}')
-                            # Print sum of weights
-                            print(f'LoRA weights sum: {lora_A.sum()}, {lora_B.sum()}')
-                            found += 1
-                            #pbar.set_description(f'found lora weights for {key}: {lora_A.size()}, {lora_B.size()}')
-                            old_type = tensor.dtype
-                            tensor = tensor.to(torch.float32)
-                            tensor += scale * lora_B.to(torch.float32) @ lora_A.to(torch.float32)
-                            tensor = tensor.to(old_type)
-                            
-                            delta = (lora_B.to(torch.float32) @ lora_A.to(torch.float32))
-                            strengths_l2.append(torch.norm(delta).item())
-                            strengths_l1.append(torch.mean(delta.abs()).item())
+                        for lora_path, junk in args.lora:
+                            lora_A, lora_B = find_lora_weights(lora_key, lora_path)
+                            lora_scale = scale[lora_path]
+                            if lora_A is not None:
+                                print(f'Found LoRA weights for {key}: {lora_A.size()}, {lora_B.size()}')
+                                # Print sum of weights
+                                print(f'LoRA weights sum: {lora_A.sum()}, {lora_B.sum()}')
+                                found += 1
+                                #pbar.set_description(f'found lora weights for {key}: {lora_A.size()}, {lora_B.size()}')
+                                old_type = tensor.dtype
+                                tensor = tensor.to(torch.float32)
+                                tensor += lora_scale * lora_B.to(torch.float32) @ lora_A.to(torch.float32)
+                                tensor = tensor.to(old_type)
+                                
+                                delta = (lora_B.to(torch.float32) @ lora_A.to(torch.float32))
+                                strengths_l2.append(torch.norm(delta).item())
+                                strengths_l1.append(torch.mean(delta.abs()).item())
                 tensors[key] = tensor
             safetensors.torch.save_file(tensors, output_path / shard.name, metadata=metadata)
     else:

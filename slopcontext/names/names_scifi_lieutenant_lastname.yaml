@@ -1,0 +1,23 @@
+system_prompt: "You are an AI creative writing assistant specializing in fantasy and sci-fi."
+user_prompt: "Write a story that takes plance on an alient planet."
+response_text: |
+  The twin suns hung low on the horizon, casting an eerie crimson glow across the barren landscape of the planet named Venithar. Captain Elara Voss stood on the observation deck of her ship, the Starfire, gazing out at the desolate beauty of this alien world. Her science officer, a man named Lieutenant {Kaelan|Darius|Talon|Zarek|Robert|Jaxon|Xander}
+# --- Generation & Adversarial Hyperparameters (optional, will use script defaults if not set) ---
+hyperparameters:
+  temperature: 0.7
+  top_k: 20
+  #max_threshold: 0.08 
+  #min_threshold: 0.05
+
+# --- Token Rules (Regular Expressions) ---
+token_rules:
+  # Regexes matching tokens to be penalized (bad tokens)
+  # These are Python regexes. ^ denotes start of token string, $ denotes end.
+  bad_token_regexes:
+    - "^[^ ]"               # Penalize any token that doesn't start with a space
+    - "^ [^A-Za-z]"          
+
+  # Regexes matching tokens to be rewarded (good tokens)
+  # Bad rules override good rules if a token matches both.
+  good_token_regexes:
+    - "^ [A-Z]"         # Reward any token that starts with space and then a capital letter

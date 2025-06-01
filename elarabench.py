@@ -31,6 +31,7 @@ import yaml
 import requests
 import re
 import json
+import time
 from collections import Counter
 from itertools import islice
 
@@ -98,8 +99,9 @@ def main():
         prompts = [p for p in prompts for _ in range(args.repeat)]
         print(f"Processing {len(prompts)} prompts in batches of {args.batch_size}...")
         for i in range(0, len(prompts), args.batch_size):
+            # Get the current batch of prompts            
             batch = prompts[i:i+args.batch_size]
-            print(f"\n**** Processing batch {i//args.batch_size + 1}: {batch}")
+            print(f"\n**** Processing batch {i//args.batch_size + 1} of {len(prompts) // args.batch_size}: {batch}")
             # Prepare batch payload
             batch_payload = {
                 'model': args.model,
@@ -114,19 +116,21 @@ def main():
                 batch_payload['top_k'] = args.top_k
 
             # Send batch request(s)
-            for _ in range(args.repeat):
-                resp = requests.post(
-                    f"{args.server_url}/completions",
-                    headers=headers,
-                    json=batch_payload
-                )
-                resp.raise_for_status()
-                data = resp.json()
-                # Iterate choices: one choice per prompt in batch
-                for idx, choice in enumerate(data.get('choices', [])):
-                    text = choice.get('text', '')
-                    print(f"Batch item {idx+1} output: {text}")
-                    combined_text += text + ' '
+            batch_start_time = time.time()
+            resp = requests.post(
+                f"{args.server_url}/completions",
+                headers=headers,
+                json=batch_payload
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            # Iterate choices: one choice per prompt in batch
+            for idx, choice in enumerate(data):
+                text = choice.get('content', '')
+                print(f"Batch item {idx+1} output: {text}")
+                combined_text += text + ' '
+            batch_end_time = time.time()
+            print(f"Batch processed in {batch_end_time - batch_start_time:.2f} seconds")
 
             # Optional: repeat until word count
             if args.repeat_until_word_count > 0:
@@ -145,6 +149,7 @@ def main():
                         combined_text += text + ' '
                     count = len(re.findall(r'\b\w+\b', combined_text))
                     print(f"Current word count: {count}")
+                    
     else:
         for prompt in prompts:
             print(f"\n**** Processing prompt: {prompt}")
@@ -225,24 +230,18 @@ def main():
 
     # Define stop words (articles, pronouns, prepositions, conjunctions)
     stop_words = {
-        # Articles
         'a', 'an', 'the',
-        # Pronouns
         'i', 'me', 'you', 'he', 'him', 'she', 'her', 'it', 'we', 'us', 'they', 'them',
         'my', 'your', 'his', 'its', 'our', 'their', 'mine', 'yours', 'hers', 'ours', 'theirs',
         'this', 'that', 'these', 'those', 'who', 'whom', 'which', 'what', 'where', 'when', 'why',
-        'how', 'whose'
-        # Prepositions
+        'how', 'whose',
         'in', 'on', 'at', 'to', 'for', 'with', 'from', 'by', 'about', 'as', 'into', 'like',
         'through', 'after', 'over', 'between', 'out', 'against', 'during', 'without', 'before',
         'under', 'around', 'among',
-        # Conjunctions
         'and', 'but', 'or', 'nor', 'for', 'so', 'yet', 'because', 'although', 'if', 'when',
         'while', 'whereas', 'once', 'until', 'than', 'though', 'lest',
-        # Demonstratives
         'this', 'that', 'these', 'those',
-        # Other common words
-        'of', 'had', 'has', 'have', 'do', 'does', 'did', 'doing', 'was', 'were', 'be', 'being', 'been', 'is', 'are', 'am', 'not', 'no', 'yes', 'up', 'down', 'here', 'there'
+        'of', 'had', 'has', 'have', 'do', 'does', 'did', 'doing', 'was', 'were', 'be', 'being', 'been', 'is', 'are', 'am', 'not', 'no', 'yes', 'up', 'down', 'here', 'there',
     }
     words = [t for t in words if t and t not in stop_words]
     num_words = len(words)

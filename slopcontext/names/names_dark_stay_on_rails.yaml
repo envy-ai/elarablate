@@ -1,0 +1,15 @@
+system_prompt: "You are an AI creative writing assistant specializing in fantasy and sci-fi."
+user_prompt: "Write a fantasy story about a male human wizard."
+response_text: |
+  Vorath Nalath
+# --- Generation & Adversarial Hyperparameters (optional, will use script defaults if not set) ---
+hyperparameters:
+  temperature: 0.7
+  top_k: 25
+  min_threshold: 0.00
+token_rules:
+  # Regexes matching tokens to be penalized (bad tokens)
+  # These are Python regexes. ^ denotes start of token string, $ denotes end.
+  bad_token_regexes:
+    - "^ [A-Z]"          # Penalize any token that starts with a space and then something
+                          # other than a capital letter

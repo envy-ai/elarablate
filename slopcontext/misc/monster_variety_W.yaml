@@ -1,0 +1,15 @@
+system_prompt: "You are an AI creative writing assistant specializing in fantasy and sci-fi."
+user_prompt: "Make a list of three enemies that might be encountered in a fantasy dustbowl biome."
+response_text: |
+  1. **Sand
+# --- Generation & Adversarial Hyperparameters (optional, will use script defaults if not set) ---
+hyperparameters:
+  temperature: 0.7
+  top_k: 20
+  #max_threshold: 0.08 
+  #min_threshold: 0.05
+
+# --- Token Rules (Regular Expressions) ---
+token_rules:
+  bad_token_regexes:
+    - "^ W$"          # Penalize any token that starts with a space and then something

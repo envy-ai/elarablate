@@ -35,7 +35,7 @@ import re   # For regular expressions
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_name_or_path", required=True)
-    parser.add_argument("--contexts_folder", required=True,
+    parser.add_argument("--context_folders", required=True, nargs='+',
                         help="Folder containing context YAML files (one .yaml/.yml per file).  Will be searched recursively.")
     parser.add_argument("--output_dir", required=True)
     # Default hyperparameters (can be overridden by YAML)
@@ -205,38 +205,45 @@ def main():
 
     # Read and parse all context configurations from YAML files recursively
     context_configs = []
-    print(f"Loading contexts recursively from: {args.contexts_folder}")
+    print(f"Loading contexts recursively from: {args.context_folders}")
     
     # Walk through directory tree recursively
-    for root, dirs, files in os.walk(args.contexts_folder):
-        # Sort files for consistent ordering
-        for fname in sorted(files):
-            if not (fname.lower().endswith(".yaml") or fname.lower().endswith(".yml")):
-                continue
-            path = os.path.join(root, fname)
-            
-            # Create relative path for cleaner display
-            rel_path = os.path.relpath(path, args.contexts_folder)
-            
-            try:
-                with open(path, 'r', encoding="utf-8") as f:
-                    config = yaml.safe_load(f)
-                    # Compile regexes for efficiency
-                    if "token_rules" in config and "bad_token_regexes" in config["token_rules"]:
-                        config["token_rules"]["bad_token_regexes_compiled"] = [
-                            re.compile(r) for r in config["token_rules"]["bad_token_regexes"]
-                        ]
-                    if "token_rules" in config and "good_token_regexes" in config["token_rules"]:
-                        config["token_rules"]["good_token_regexes_compiled"] = [
-                            re.compile(r) for r in config["token_rules"]["good_token_regexes"]
-                        ]
-                    context_configs.append(config)
-                    print(f"  Loaded context: {rel_path}")
-            except Exception as e:
-                print(f"Error loading or parsing YAML file {path}: {e}")
-   
+    for context_folder in args.context_folders:
+        if not os.path.exists(context_folder):
+            print(f"Warning: Context folder '{context_folder}' does not exist. Skipping.")
+            continue
+        if not os.path.isdir(context_folder):
+            print(f"Warning: Context folder '{context_folder}' is not a directory. Skipping.")
+            continue
+        for root, dirs, files in os.walk(context_folder):
+            # Sort files for consistent ordering
+            for fname in sorted(files):
+                if not (fname.lower().endswith(".yaml") or fname.lower().endswith(".yml")):
+                    continue
+                path = os.path.join(root, fname)
+                
+                # Create relative path for cleaner display
+                rel_path = os.path.relpath(path, context_folder)
+                
+                try:
+                    with open(path, 'r', encoding="utf-8") as f:
+                        config = yaml.safe_load(f)
+                        # Compile regexes for efficiency
+                        if "token_rules" in config and "bad_token_regexes" in config["token_rules"]:
+                            config["token_rules"]["bad_token_regexes_compiled"] = [
+                                re.compile(r) for r in config["token_rules"]["bad_token_regexes"]
+                            ]
+                        if "token_rules" in config and "good_token_regexes" in config["token_rules"]:
+                            config["token_rules"]["good_token_regexes_compiled"] = [
+                                re.compile(r) for r in config["token_rules"]["good_token_regexes"]
+                            ]
+                        context_configs.append(config)
+                        print(f"  Loaded context: {rel_path}")
+                except Exception as e:
+                    print(f"Error loading or parsing YAML file {path}: {e}")
+    
     if not context_configs:
-        print(f"No YAML context files found in {args.contexts_folder} (searched recursively). Exiting.")
+        print(f"No YAML context files found in {args.context_folders} (searched recursively). Exiting.")
         return
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
@@ -452,10 +459,10 @@ def main():
             print(f"--- Epoch {epoch} No losses recorded ---")
             
     # Print out names of all lora layers
-    print("\nLoRA layers:")
-    for name, param in model.named_parameters():
-        if "lora" in name:
-            print(f"  {name}: {param.size()}")
+    # print("\nLoRA layers:")
+    # for name, param in model.named_parameters():
+    #     if "lora" in name:
+    #         print(f"  {name}: {param.size()}")
     # Save LoRA adapters
     os.makedirs(args.output_dir, exist_ok=True)
     model.save_pretrained(args.output_dir)
