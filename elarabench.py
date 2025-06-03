@@ -1,7 +1,6 @@
 """
-File: elarabench.py
-Author: [Author Name - placeholder, as it's not in the original script]
-Date: [Date of script creation/last modification - placeholder]
+File: elarablate/elarabench.py
+
 
 Purpose:
 This script, elarabench.py, serves as a benchmark tool for OpenAI-compatible API
@@ -19,6 +18,7 @@ models to generate repetitive or overly common phrases. It achieves this by:
 Methods:
 - get_ngrams(tokens, n): Takes a list of tokens and an integer n, and returns a
   list of n-grams (sequences of n tokens).
+
 - main(): The core function that orchestrates the entire benchmarking process. It handles:
     - Parsing command-line arguments.
     - Loading prompts from the YAML file.
@@ -30,6 +30,7 @@ Methods:
     - Tokenizing the text.
     - Filtering stop words.
     - Counting and displaying n-gram frequencies.
+
 - stream_request(): (Defined within main if batch_size <= 1) Handles the specifics
   of making streaming API requests, receiving data in chunks, and assembling the
   complete response text for a single prompt.
