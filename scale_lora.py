@@ -1,3 +1,85 @@
+"""
+File: scale_lora.py
+Author: [Author Name - placeholder, as script is new]
+Date: [Date of script creation/last modification - placeholder]
+
+Purpose:
+This script modifies the strength or intensity of a LoRA (Low-Rank Adaptation)
+adapter by scaling its constituent weight matrices. Specifically, it targets the
+`lora_B` weight matrices (though `lora_A` could also be targeted with minor
+modification) and multiplies them by a user-provided scaling factor. The result
+is saved as a new LoRA adapter in a specified output directory, leaving the
+original LoRA unchanged. This allows for quick adjustments to a LoRA's impact
+without needing to retrain it.
+
+Methods:
+- scale_lora(lora_path_str: str, output_path_str: str, scale_factor: float, device_str: str = 'cuda'):
+    The main function performing the scaling operation.
+    - Takes paths for the input LoRA directory, output directory, the scaling
+      factor, and the computation device ('cuda' or 'cpu') as input.
+    - Validates the existence of the input LoRA directory.
+    - Creates the output directory if it doesn't already exist.
+    - Sets up the PyTorch device, with a fallback to CPU if CUDA is requested but unavailable.
+    - Loads the LoRA model's state dictionary from either `adapter_model.safetensors`
+      (preferred) or `adapter_model.bin` located within the input LoRA directory.
+    - Iterates through each tensor in the loaded state dictionary:
+        - If the tensor's key includes "lora_B" (indicating it's a `lora_B` matrix),
+          the tensor is scaled by the `scale_factor`. The scaling operation is
+          performed in float32 precision to maintain accuracy, and the tensor is
+          then cast back to its original data type.
+        - Tensors not matching the "lora_B" criteria are copied to the new state
+          dictionary without modification.
+    - Reports the number of tensors scaled or warns if no relevant tensors were found.
+    - Saves the modified (scaled) state dictionary to `adapter_model.safetensors`
+      in the specified output directory.
+    - Copies essential configuration and tokenizer-related files (e.g.,
+      `adapter_config.json`, `README.md`, tokenizer files) from the input LoRA
+      directory to the output directory to ensure the new LoRA is complete and usable.
+    - Issues a warning if `adapter_config.json` is missing, as it is crucial for
+      the LoRA's functionality.
+- Main script execution block (if __name__ == '__main__'):
+    - Sets up an `argparse.ArgumentParser` to handle command-line arguments:
+      `lora_path`, `output_path`, `scale_factor`, and an optional `--device`.
+    - Parses the provided command-line arguments.
+    - Calls the `scale_lora` function with these parsed arguments.
+    - Includes basic try-except error handling for the `scale_lora` call, printing
+      the error and a traceback if an exception occurs.
+
+Objects:
+- parser (argparse.ArgumentParser): Manages command-line argument definitions and parsing.
+- args (argparse.Namespace): Stores the parsed command-line arguments.
+- lora_path, output_path (pathlib.Path): Path objects for input and output directories.
+- device (torch.device): PyTorch device object used for tensor operations.
+- lora_state_dict (dict): A dictionary where keys are tensor names (str) and values
+  are the corresponding PyTorch tensors, loaded from the input LoRA model file.
+- scaled_lora_state_dict (dict): A new dictionary created to hold the tensors of
+  the scaled LoRA, which will then be saved.
+- tensor, scaled_tensor (torch.Tensor): PyTorch tensor objects representing individual
+  weights from the LoRA model.
+
+Parameters (Command-Line Arguments):
+- lora_path (str, positional): The file system path to the input LoRA directory.
+- output_path (str, positional): The file system path to the directory where the
+  newly scaled LoRA will be saved.
+- scale_factor (float, positional): The numerical factor by which the `lora_B`
+  weights will be multiplied.
+- --device (str, optional, default='cuda', choices=['cuda', 'cpu']): Specifies
+  whether to use 'cuda' or 'cpu' for tensor operations.
+
+Configurations (Derived from parameters or environment):
+- Computation device: Selected based on the `--device` argument and CUDA availability.
+- File paths: Input and output paths for LoRA data and configuration files are
+  constructed based on the `lora_path` and `output_path` arguments.
+
+Hardcoded Variables:
+- Standard LoRA model filenames: "adapter_model.safetensors", "adapter_model.bin".
+- Target substring for weight scaling: "lora_B" (identifies the LoRA B matrices).
+  (A commented-out section indicates "lora_A" was also considered).
+- `config_files_to_copy` (list of str): A predefined list of common configuration and
+  tokenizer file names that are typically associated with a LoRA adapter and should
+  be copied to the new scaled LoRA directory (e.g., "adapter_config.json",
+  "README.md", "tokenizer.json"). "peft_config.json" is also conditionally copied.
+"""
 import argparse
 import os
 import shutil

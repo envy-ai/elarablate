@@ -1,3 +1,122 @@
+"""
+File: elarablate.py
+Author: [Author Name - placeholder]
+Date: [Date of script creation/last modification - placeholder]
+
+Purpose:
+This script implements an adversarial fine-tuning approach for language models
+using QLoRA (Quantized Low-Rank Adaptation). The core idea is to improve the
+model's generation quality by discouraging "bad" token sequences and encouraging
+"good" ones based on user-defined rules and probability thresholds. It iteratively
+processes contexts (prompts and desired response characteristics) defined in YAML files,
+adjusting the LoRA adapters to steer the model's behavior.
+
+The process for each training step within a context involves:
+1. Recomputing hidden states for the current prefix (system + user + partial response)
+   to get an accurate representation of the model's state.
+2. Predicting the next token distribution based on these hidden states.
+3. Analyzing the top-k predicted tokens:
+    - Applying regex-based rules and specific token lists (good/bad/excluded/forced)
+      to classify these tokens.
+    - Identifying "bad" tokens (e.g., matching a negative regex, or a "good" token
+      appearing with excessively high probability).
+    - Identifying "good" tokens (e.g., matching a positive regex with low probability,
+      or a "force_good_token" that needs its probability boosted).
+4. Constructing an adversarial loss:
+    - Positive loss for "bad" tokens (to decrease their log-probability).
+    - Negative loss for "good" tokens (to increase their log-probability).
+5. Performing backpropagation to update the QLoRA adapter weights.
+
+Methods:
+- main(): The central function that manages the entire fine-tuning pipeline:
+    - Parses command-line arguments for model paths, context locations, output directories,
+      and various hyperparameters (learning rate, LoRA config, thresholds, etc.).
+    - Sets up instruction templates based on the specified model type (e.g., Llama, Qwen).
+    - Configures BitsAndBytes for QLoRA quantization (e.g., 4-bit, 8-bit, FP8).
+    - Loads the base pre-trained language model and applies quantization.
+    - Optionally caches the quantized base model for faster subsequent runs.
+    - Initializes PEFT (Parameter-Efficient Fine-Tuning) by applying LoRAConfig to
+      specified target modules (attention and optionally MLP layers) within a defined layer range.
+    - Loads the appropriate AutoTokenizer, ensuring a padding token is set.
+    - Recursively discovers and parses YAML files from specified `context_folders`. Each
+      YAML file defines one or more training contexts, including system/user prompts,
+      initial response text, repetition count, and specific token rules (regexes for
+      good/bad tokens, lists of tokens to force or exclude) and hyperparameters
+      that can override global settings.
+    - Executes the main training loop over epochs and loaded contexts.
+    - Saves the trained LoRA adapters to the specified output directory.
+- replace_random_choice(match): (Helper function within `main`) Used with `re.sub` to
+  dynamically replace sections in response texts like "{option1|option2|option3}"
+  with a randomly selected option. This allows for variability in training data.
+
+Objects:
+- parser (argparse.ArgumentParser): Handles command-line argument parsing.
+- args (argparse.Namespace): Stores the parsed command-line arguments.
+- instruct_templates (dict): Maps model type strings (e.g., "llama") to their
+  corresponding prompt formatting templates.
+- bnb_config (BitsAndBytesConfig): Configuration object for model quantization.
+- base_model (transformers.PreTrainedModel): The loaded pre-trained language model
+  (e.g., LlamaForCausalLM) before LoRA adaptation.
+- model_class (type): The class of the loaded model (e.g., LlamaForCausalLM).
+- tokenizer (transformers.AutoTokenizer): The tokenizer for the specified model.
+- peft_config (peft.LoraConfig): Configuration for LoRA adapters.
+- model (peft.PeftModel): The model wrapped with PEFT LoRA adapters, which is trained.
+- context_configs (list): A list of dictionaries, each parsed from a YAML context file,
+  containing prompts, token rules, and local hyperparameters.
+- optimizer (torch.optim.AdamW): The optimizer used for updating LoRA weights.
+- pkv (tuple): Past key-values (cached hidden states) from the model, used for
+  efficient sequential token processing.
+- inputs, id_tensor, id_tensor_grad (torch.Tensor): PyTorch tensors representing
+  tokenized inputs to the model.
+- logits, probs, log_probs (torch.Tensor): PyTorch tensors representing the model's
+  output distribution over the vocabulary.
+- top_probs, top_ids (torch.Tensor): Tensors for the probabilities and token IDs of
+  the top-k predicted next tokens.
+- bad_token_indices_in_topk, good_token_indices_in_topk (list): Lists of token IDs
+  identified for penalization or reward in the current step.
+- step_loss_terms, current_step_loss, epoch_losses (float/torch.Tensor): Variables
+  used to calculate and track loss values during training.
+
+Parameters (Command-Line Arguments):
+- --model_name_or_path (str, required): HF model identifier.
+- --context_folders (str, required, nargs='+'): Path(s) to folder(s) with YAML context files.
+- --output_dir (str, required): Directory to save LoRA adapters.
+- --temperature (float, default=1.0): Softmax temperature for analyzing token probabilities.
+- --top_k (int, default=50): Number of top tokens to consider for adversarial updates.
+- --epochs (int, default=50): Number of training epochs.
+- --lr (float, default=7e-5): Learning rate.
+- --lora_r (int, default=8): LoRA rank.
+- --lora_alpha (int, default=16): LoRA alpha scaling.
+- --lora_dropout (float, default=0.05): LoRA dropout.
+- --layer_range (str, default="59-79"): Range of model layers to apply LoRA (e.g., "min-max").
+- --model_type (str, default="llama", choices=["llama", "qwen"]): Type of model.
+- --cache_quantized_model_dir (str, default=None): Path to cache the quantized base model.
+- --quant_type (str, default="nf4", choices=["int8", "nf4", "fp8"]): Quantization type.
+- --max_threshold_factor (float, default=1): Factor for max probability threshold (prob > 1/top_k * factor).
+- --min_threshold_factor (float, default=0.75): Factor for min probability threshold (prob < max_thresh * factor).
+
+Configurations (Derived from parameters, YAML, or hardcoded):
+- `instruct_template` (str): Prompt format string selected based on `args.model_type`.
+- `default_system_msg`, `default_user_msg` (str): Default prompts if not in YAML.
+- `start_layer`, `end_layer` (int): Parsed from `args.layer_range`.
+- `target_modules` (list): Model module names for LoRA, determined by `args.model_type` and `layer_range`.
+- YAML-defined context configurations:
+    - `system_prompt`, `user_prompt`, `response_text` (str).
+    - `hyperparameters` (dict): Overrides for `temperature`, `top_k`, thresholds.
+    - `repeat` (int): How many times to process this context per epoch.
+    - `token_rules` (dict):
+        - `bad_token_regexes` (list of str), compiled to `bad_token_regexes_compiled`.
+        - `good_token_regexes` (list of str), compiled to `good_token_regexes_compiled`.
+        - `force_good_tokens` (list of str), converted to `force_good_token_ids` (list of int).
+        - `exclude_tokens` (list of str), converted to `exclude_token_ids` (list of int).
+
+Hardcoded Variables:
+- Module name patterns for LoRA targets for "llama" (e.g., `model.layers.{i}.self_attn.q_proj`) and "qwen".
+- Placeholders (`$system$`, `$user$`, `$response$`) in `instruct_templates`.
+- Regex `r"\{([^}]+)\}"` for parsing `"{opt1|opt2}"` syntax in YAML response texts.
+- Use of `colorist` library for colored console output.
+- Fallback logic for setting `tokenizer.pad_token_id`.
+"""
 #!/usr/bin/env python3
 """
 Adversarial QLoRA Finetuning Script (with per-step prefix recomputation)

@@ -1,3 +1,100 @@
+"""
+File: merge_lora.py
+Author: tdrussell (Original MIT License)
+Date: [Date of script creation/last modification - placeholder, as it's not in the original script]
+
+Purpose:
+This script is designed to merge one or more LoRA (Low-Rank Adaptation) adapters
+into the weights of a base Hugging Face transformer model. It takes an input model,
+one or more LoRA adapters (each with a specified scaling factor), and an output path.
+The script then creates a new model in the output path with the LoRA modifications
+directly applied (baked into) the original model weights. This is useful for
+deploying fine-tuned models without needing the PEFT library at inference time or
+managing separate adapter files. The script supports applying LoRAs to a specific
+range of layers within the model.
+
+Methods:
+- find_lora_weights(key, lora_path): Given a base model tensor key and a path to a
+  loaded LoRA, this function searches for the corresponding 'lora_A' and 'lora_B'
+  weight matrices within that LoRA's state dictionary.
+- LoraAction(argparse.Action): A custom action for argparse that allows users to
+  specify LoRA adapters and their scales as pairs of arguments on the command line
+  (e.g., --lora /path/to/lora1 0.5 /path/to/lora2 0.8). It validates that an even
+  number of arguments are provided for paths and scales.
+- Main script execution (unnamed, top-level):
+    - Parses command-line arguments including input model path, LoRA paths and scales,
+      output path, layer range for merging, and device preference.
+    - Validates the specified layer range.
+    - Creates the output directory if it doesn't exist.
+    - Loads each specified LoRA:
+        - Reads `adapter_config.json` to get `lora_alpha` and `r`.
+        - Loads LoRA weights from `adapter_model.safetensors`.
+        - Calculates an effective scale for the LoRA based on its alpha, r,
+          the user-provided scale, and a global `scale_all` factor.
+        - Moves LoRA weights to GPU if `--no-gpu` is not set.
+    - Identifies model shards (e.g., `model-00001-of-0000X.safetensors`) in the input path.
+    - If `model.safetensors.index.json` exists, it's used to determine which shards
+      contain weights for layers within the specified `layer_range`. These are
+      designated as `lora_shards`.
+    - Copies non-model files and model shards that fall outside the `layer_range`
+      directly to the output directory.
+    - Iterates through each model shard of the base model:
+        - If the shard is within the `layer_range` (is a `lora_shard`):
+            - Opens the shard and iterates through its tensor keys.
+            - For each tensor, checks if its layer number is within the target range.
+            - If yes, it iterates through all provided LoRAs:
+                - Retrieves the `lora_A` and `lora_B` matrices for the current tensor key.
+                - Calculates the weight delta: `effective_scale * (lora_B @ lora_A)`.
+                - Adds this delta to the base model's tensor (weights are cast to
+                  float32 for the operation and then back to original dtype).
+                - Optionally tracks L2 norm and mean absolute value of the delta for analysis.
+            - Saves the modified tensors to a new shard in the output directory.
+        - If the shard is outside the `layer_range`, it's copied as-is.
+    - Prints statistics, including the number of tensors LoRA was applied to and
+      LoRA strength metrics (if any weights were merged).
+
+Objects:
+- parser (argparse.ArgumentParser): Manages command-line argument definitions and parsing.
+- args (argparse.Namespace): Stores the parsed command-line arguments.
+- input_path, output_path (pathlib.Path): Objects representing file system paths.
+- device (str): Indicates the computation device ('cpu' or 'cuda').
+- lora_state (dict): A nested dictionary: {lora_adapter_path: {tensor_name: tensor_weight}}.
+  Stores the weights of all loaded LoRA adapters.
+- scale (dict): Maps LoRA adapter paths to their calculated effective scaling factors.
+- shards (list): A list of `Path` objects for each model shard file in the input directory.
+- lora_shards (list): A list of shard filenames (str) that are targeted for LoRA merging.
+- indexdata (dict): Parsed content of `model.safetensors.index.json`, primarily the `weight_map`.
+- tensors (dict): Temporarily holds tensors of a single shard before saving.
+- lora_config (dict): Parsed content of a LoRA's `adapter_config.json`.
+- strengths_l2, strengths_l1 (list): Store L2 norm and mean absolute L1 norm of the
+  applied LoRA deltas for diagnostic purposes.
+
+Parameters (Command-Line Arguments):
+- input_path (str, positional): Path to the directory containing the base model (sharded).
+- output_path (str, positional): Path to the directory where the merged model will be saved.
+- --no-gpu (bool, action='store_true'): If specified, forces the merge operation to run on CPU.
+- --layer_range (str, default='49-79'): Specifies the range of model layers to apply LoRA to
+  (e.g., "min-max"). Default is suitable for some 70B Llama models.
+- --lora (str, nargs='*', action=LoraAction, required=True): Defines LoRA adapters and their
+  scales. Expects pairs: `[path_to_lora1] [scale1] [path_to_lora2] [scale2] ...`.
+- --scale_all (float, default=1.0): A global scaling factor applied to all LoRAs,
+  multiplied with their individual scales.
+
+Configurations (Derived from parameters or files):
+- `start_layer`, `end_layer` (int): Parsed from `args.layer_range`.
+- Effective LoRA scale (float): Calculated per LoRA as
+  `lora_config['lora_alpha'] / lora_config['r'] * individual_scale_arg * args.scale_all`.
+- `lora_shards` (list of str): Determined by comparing layer names in `model.safetensors.index.json`
+  against the `start_layer` and `end_layer`.
+
+Hardcoded Variables:
+- Default LoRA filenames: `adapter_config.json`, `adapter_model.safetensors`.
+- Model index filename: `model.safetensors.index.json`.
+- Regex `r'^language_model\.'`: Used to normalize tensor keys from the base model
+  when looking up corresponding LoRA weights (removes "language_model." prefix).
+- Regex `r'layers\.(\d+)'`: Used to extract the layer number from a tensor key to
+  check if it's within the specified `layer_range`.
+"""
 # Usage: python merge_lora.py input_path lora_path output_path
 # Output path is created if it doesn't exist
 
